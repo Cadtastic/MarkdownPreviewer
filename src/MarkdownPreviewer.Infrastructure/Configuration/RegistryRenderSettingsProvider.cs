@@ -41,6 +41,7 @@ public sealed class RegistryRenderSettingsProvider : IRenderSettingsProvider
             return new RenderSettings
             {
                 AllowRawHtml      = Bool(user, machine, "AllowRawHtml",      defaults.AllowRawHtml),
+                AllowRemoteImages = Bool(user, machine, "AllowRemoteImages", defaults.AllowRemoteImages),
                 Linkify           = Bool(user, machine, "Linkify",           defaults.Linkify),
                 Typographer       = Bool(user, machine, "Typographer",       defaults.Typographer),
                 Highlight         = Bool(user, machine, "Highlight",         defaults.Highlight),

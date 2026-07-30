@@ -47,6 +47,47 @@ public sealed class ShellExecuteLinkLauncher : IExternalLinkLauncher
         }
     }
 
+    /// <summary>
+    /// File types a linked document may open as. Deliberately an allowlist of
+    /// inert document formats: no executables, no scripts, no installers, no
+    /// shortcuts — a hostile README must not be able to phrase "click here" as a
+    /// process launch.
+    /// </summary>
+    private static readonly HashSet<string> OpenableExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".md", ".markdown", ".mdown", ".mkd", ".mkdn", ".mdwn", ".mdtxt", ".mdtext",
+        ".txt", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".tsv",
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif",
+        ".pdf",
+    };
+
+    public void LaunchDocument(string fullPath)
+    {
+        if (string.IsNullOrWhiteSpace(fullPath) ||
+            !Path.IsPathFullyQualified(fullPath) ||
+            !OpenableExtensions.Contains(Path.GetExtension(fullPath)) ||
+            !File.Exists(fullPath))
+        {
+            _log.Warn($"Refused to open a linked file: {Describe(fullPath ?? string.Empty)}");
+            return;
+        }
+
+        try
+        {
+            using Process? _ = Process.Start(new ProcessStartInfo
+            {
+                FileName = fullPath,
+                UseShellExecute = true,
+            });
+
+            _log.Info($"Opened linked document: {Path.GetFileName(fullPath)}");
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Could not open the linked document.", ex);
+        }
+    }
+
     internal static bool IsPermitted(string url, out Uri? parsed)
     {
         parsed = null;

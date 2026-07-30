@@ -10,9 +10,15 @@ public sealed class RenderSettingsTests
     {
         RenderSettings settings = RenderSettings.Default;
 
-        // Both of these are security/usability decisions, not arbitrary defaults;
-        // a regression on either is a behaviour change worth failing a build over.
-        Assert.False(settings.AllowRawHtml);
+        // Security/usability decisions, not arbitrary defaults; a regression on
+        // any of these is a behaviour change worth failing a build over.
+        //
+        // Raw HTML defaults ON because what renders is the sanitised form
+        // (scripts, frames, forms, handlers and dangerous schemes stripped, CSP
+        // behind it) — but remote images stay OFF: they are how tracking pixels
+        // learn that this user looked at this file.
+        Assert.True(settings.AllowRawHtml);
+        Assert.False(settings.AllowRemoteImages);
         Assert.False(settings.SingleDollarMath);
     }
 

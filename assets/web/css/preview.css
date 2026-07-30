@@ -125,6 +125,86 @@ mjx-container[jax="SVG"][display="true"] {
   opacity: 0.7;
 }
 
+/* --- floating table of contents ------------------------------------------ */
+
+.mdp-toc {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 10;
+  box-sizing: border-box;
+  width: 220px;
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  background: var(--mdp-canvas, Canvas);
+  color: var(--mdp-ink, CanvasText);
+  font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  opacity: 0.96;
+}
+
+.mdp-toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.mdp-toc-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mdp-toc-hide {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.mdp-toc-hide:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.mdp-toc-list {
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.mdp-toc-list a {
+  display: block;
+  padding: 2px 12px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+.mdp-toc-list a:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.mdp-toc-list a.mdp-toc-h2 { padding-left: 22px; }
+.mdp-toc-list a.mdp-toc-h3 { padding-left: 32px; }
+.mdp-toc-list a.mdp-toc-h4 { padding-left: 42px; }
+
+/* A floating panel over a narrow pane covers the document; drop it. */
+@media (max-width: 640px) {
+  .mdp-toc { display: none; }
+}
+
 /* --- notices / diagnostics ---------------------------------------------- */
 
 .notice {
@@ -148,5 +228,6 @@ mjx-container[jax="SVG"][display="true"] {
 @media print {
   body { overflow: visible; }
   .notice { display: none; }
+  .mdp-toc { display: none; }
   .markdown-body { max-width: none; padding: 0; }
 }

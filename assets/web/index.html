@@ -9,6 +9,11 @@
 
   Everything is local. connect-src is 'none' — a previewed Markdown file must
   never be able to phone home, because the user only clicked a file in Explorer.
+
+  img-src permits https: broadly, but that is NOT the enforcement point for
+  remote images: the host intercepts every image request (WebResourceRequested)
+  and refuses http(s) hosts unless the user opted in via AllowRemoteImages.
+  CSP here is the backstop for scheme abuse; the host is the privacy gate.
 -->
 <html lang="en">
 <head>
@@ -17,7 +22,7 @@
     default-src   'none';
     script-src    https://assets.mdpreview.invalid;
     style-src     https://assets.mdpreview.invalid 'unsafe-inline';
-    img-src       https://doc.mdpreview.invalid https://assets.mdpreview.invalid data: blob:;
+    img-src       https: data: blob:;
     font-src      https://assets.mdpreview.invalid data:;
     connect-src   'none';
     frame-src     'none';
@@ -41,6 +46,18 @@
 </head>
 <body>
   <div id="notice" class="notice" role="status" hidden></div>
+
+  <!-- Floating table of contents; populated per render, toggled from the ×
+       button or the host's context-menu entry. Hidden entirely for documents
+       with fewer than two headings. -->
+  <aside id="toc" class="mdp-toc" hidden>
+    <div class="mdp-toc-header">
+      <span class="mdp-toc-title">Contents</span>
+      <button id="toc-hide" class="mdp-toc-hide" type="button" title="Hide (right-click the page to show again)">×</button>
+    </div>
+    <nav id="toc-list" class="mdp-toc-list"></nav>
+  </aside>
+
   <article id="content" class="markdown-body"></article>
 
   <!-- Always-on core: ~360 KB total. Mermaid (3.5 MB) and MathJax (2.1 MB) are

@@ -143,13 +143,15 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 _assets.WebRootPath,
                 CoreWebView2HostResourceAccessKind.DenyCors);
 
-            // The document host is answered by hand in OnWebResourceRequested,
-            // NOT by a folder mapping: a mapping added after index.html has
-            // committed never applies to the already-loaded document, and the
-            // document folder changes with every selection. Images only — the
-            // page's CSP allows nothing else from this host anyway.
+            // Every image request goes through OnWebResourceRequested. The
+            // document host is answered by hand there (a folder mapping added
+            // after index.html has committed never applies to the already-loaded
+            // document, and the document folder changes with every selection),
+            // and remote hosts are refused unless the user opted into
+            // AllowRemoteImages — the CSP's img-src is deliberately broad so
+            // that THIS is the enforcement point.
             webView.CoreWebView2.AddWebResourceRequestedFilter(
-                "https://" + DocumentHost + "/*", CoreWebView2WebResourceContext.Image);
+                "*", CoreWebView2WebResourceContext.Image);
 
             _log.Info($"Navigating the preview surface to {PageUrl}.");
             webView.CoreWebView2.Navigate(PageUrl);
@@ -363,8 +365,9 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     }
 
     /// <summary>
-    /// Serves document-relative image requests from the current document's
-    /// folder. Scoped by the filter to images on <c>doc.mdpreview.invalid</c>.
+    /// The single gate every image request passes through: serves the document
+    /// host from the current document's folder, lets the asset host fall through
+    /// to its folder mapping, and blocks remote hosts unless the user opted in.
     /// </summary>
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
@@ -372,41 +375,76 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
         try
         {
-            string? directory = _mappedDocumentDirectory;
-
-            if (directory is null ||
-                !string.Equals(e.Request.Method, "GET", StringComparison.OrdinalIgnoreCase))
+            if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out Uri? uri))
             {
-                e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
                 return;
             }
 
-            var uri = new Uri(e.Request.Uri);
-            string relative = Uri.UnescapeDataString(uri.AbsolutePath)
-                .TrimStart('/')
-                .Replace('/', Path.DirectorySeparatorChar);
-
-            // Canonicalise and confine to the document's folder: "../" and
-            // absolute-path tricks must not escape it.
-            string root = Path.GetFullPath(directory + Path.DirectorySeparatorChar);
-            string full = Path.GetFullPath(Path.Combine(root, relative));
-            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(full))
+            if (string.Equals(uri.Host, AssetHost, StringComparison.OrdinalIgnoreCase))
             {
-                e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+                return;   // the folder mapping serves the page's own assets
+            }
+
+            if (string.Equals(uri.Host, DocumentHost, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.Equals(e.Request.Method, "GET", StringComparison.OrdinalIgnoreCase) ||
+                    !TryMapDocumentUrl(uri, out string fullPath))
+                {
+                    e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+                    return;
+                }
+
+                var stream = new FileStream(
+                    fullPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+
+                e.Response = environment.CreateWebResourceResponse(
+                    stream, 200, "OK", $"Content-Type: {MimeTypeFor(Path.GetExtension(fullPath))}");
                 return;
             }
 
-            var stream = new FileStream(
-                full, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-
-            e.Response = environment.CreateWebResourceResponse(
-                stream, 200, "OK", $"Content-Type: {MimeTypeFor(Path.GetExtension(full))}");
+            // Anything else is a remote image. Off by default: remote images are
+            // how tracking pixels learn that this user looked at this file.
+            if (_lastRequest?.Settings.AllowRemoteImages != true)
+            {
+                e.Response = environment.CreateWebResourceResponse(
+                    null, 403, "Remote images are disabled", string.Empty);
+            }
         }
         catch (Exception ex)
         {
             _log.Debug($"Serving '{e.Request.Uri}' failed: {ex.Message}");
             e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
         }
+    }
+
+    /// <summary>
+    /// Maps a <c>doc.mdpreview.invalid</c> URL to a file inside the current
+    /// document's folder. Canonicalises and confines: "../" and absolute-path
+    /// tricks must not escape the folder.
+    /// </summary>
+    private bool TryMapDocumentUrl(Uri uri, out string fullPath)
+    {
+        fullPath = string.Empty;
+
+        string? directory = _mappedDocumentDirectory;
+        if (directory is null)
+        {
+            return false;
+        }
+
+        string relative = Uri.UnescapeDataString(uri.AbsolutePath)
+            .TrimStart('/')
+            .Replace('/', Path.DirectorySeparatorChar);
+
+        string root = Path.GetFullPath(directory + Path.DirectorySeparatorChar);
+        string candidate = Path.GetFullPath(Path.Combine(root, relative));
+        if (!candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(candidate))
+        {
+            return false;
+        }
+
+        fullPath = candidate;
+        return true;
     }
 
     private static string MimeTypeFor(string extension) => extension.ToLowerInvariant() switch
@@ -567,9 +605,28 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 break;
 
             case "openExternal":
-                if (message.Url is { Length: > 0 } url)
+                if (message.Url is { Length: > 0 } url &&
+                    !url.Contains(".mdpreview.invalid/", StringComparison.OrdinalIgnoreCase))
                 {
                     _launcher.Launch(url);
+                }
+
+                break;
+
+            case "openDocument":
+                // A link to a sibling of the previewed document. Resolve it back
+                // to a real file, confined to the document's folder; the
+                // launcher applies its own document-type allowlist on top.
+                if (message.Url is { Length: > 0 } documentUrl &&
+                    Uri.TryCreate(documentUrl, UriKind.Absolute, out Uri? documentUri) &&
+                    string.Equals(documentUri.Host, DocumentHost, StringComparison.OrdinalIgnoreCase) &&
+                    TryMapDocumentUrl(documentUri, out string linkedPath))
+                {
+                    _launcher.LaunchDocument(linkedPath);
+                }
+                else
+                {
+                    _log.Debug($"Ignored a document link that does not resolve: {message.Url}");
                 }
 
                 break;
@@ -636,7 +693,10 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         _launcher.Launch(e.Uri);
     }
 
-    /// <summary>Strips menu entries that make no sense for a read-only preview.</summary>
+    /// <summary>
+    /// Strips menu entries that make no sense for a read-only preview, and adds
+    /// the table-of-contents toggle.
+    /// </summary>
     private void OnContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
     {
         for (int i = e.MenuItems.Count - 1; i >= 0; i--)
@@ -648,6 +708,27 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             {
                 e.MenuItems.RemoveAt(i);
             }
+        }
+
+        try
+        {
+            CoreWebView2Environment environment = _webView!.CoreWebView2.Environment;
+
+            if (e.MenuItems.Count > 0)
+            {
+                e.MenuItems.Add(environment.CreateContextMenuItem(
+                    string.Empty, null, CoreWebView2ContextMenuItemKind.Separator));
+            }
+
+            CoreWebView2ContextMenuItem toggle = environment.CreateContextMenuItem(
+                "Toggle table of contents", null, CoreWebView2ContextMenuItemKind.Command);
+            toggle.CustomItemSelected += (_, _) => Post(new HostToPageMessage { Kind = "toc" });
+            e.MenuItems.Add(toggle);
+        }
+        catch (Exception ex)
+        {
+            // A missing menu item must never take the menu (or the preview) down.
+            _log.Debug($"Adding the table-of-contents menu item failed: {ex.Message}");
         }
     }
 

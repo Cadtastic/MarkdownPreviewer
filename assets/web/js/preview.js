@@ -45,16 +45,19 @@
     theme: 'light',
     settings: defaultSettings(),
     md: null,
-    mdSignature: null
+    mdSignature: null,
+    tocVisible: true
   };
 
   var assetLoads = Object.create(null);   // href -> Promise
   var content = document.getElementById('content');
   var notice = document.getElementById('notice');
+  var toc = document.getElementById('toc');
+  var tocList = document.getElementById('toc-list');
 
   function defaultSettings() {
     return {
-      allowRawHtml: false,
+      allowRawHtml: true,
       linkify: true,
       typographer: false,
       highlight: true,
@@ -285,7 +288,10 @@
       if (i >= 0) {
         var resolved = resolveDocumentUrl(token.attrs[i][1], 'link');
         token.attrs[i][1] = resolved || '#';
-        if (/^https?:/i.test(resolved)) {
+        if (resolved.indexOf(DOC_ORIGIN + '/') === 0) {
+          // A sibling of the previewed document; the host opens the real file.
+          token.attrSet('data-mdp-doclink', '1');
+        } else if (/^https?:/i.test(resolved)) {
           token.attrSet('rel', 'noopener noreferrer nofollow');
           token.attrSet('data-mdp-external', '1');
         }
@@ -431,6 +437,50 @@
     }
   }
 
+  // --------------------------------------------------------- table of contents ---
+
+  function readTocPreference() {
+    try { return window.localStorage.getItem('mdp.toc') !== '0'; }
+    catch (_) { return true; }
+  }
+
+  function storeTocPreference(visible) {
+    try { window.localStorage.setItem('mdp.toc', visible ? '1' : '0'); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  /*
+   * Rebuilt per render from the headings markdown-it-anchor gave ids to.
+   * Documents with fewer than two headings get no TOC regardless of the
+   * visibility preference — a one-heading TOC is noise.
+   */
+  function buildToc() {
+    tocList.textContent = '';
+
+    var headings = content.querySelectorAll('h1[id], h2[id], h3[id], h4[id]');
+    if (headings.length < 2) {
+      toc.hidden = true;
+      return;
+    }
+
+    for (var i = 0; i < headings.length; i++) {
+      var heading = headings[i];
+      var link = document.createElement('a');
+      link.href = '#' + heading.id;
+      link.textContent = heading.textContent;
+      link.className = 'mdp-toc-' + heading.tagName.toLowerCase();
+      tocList.appendChild(link);
+    }
+
+    toc.hidden = !state.tocVisible;
+  }
+
+  function setTocVisible(visible) {
+    state.tocVisible = visible === true;
+    storeTocPreference(state.tocVisible);
+    toc.hidden = !(state.tocVisible && tocList.childElementCount >= 2);
+  }
+
   // ----------------------------------------------------------------- mermaid ---
 
   function mermaidTheme() {
@@ -529,10 +579,12 @@
     setMedia('css-code-dark', dark);
 
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-    // github-markdown-css paints .markdown-body; mirror it onto the canvas so
-    // over-scroll and the area beside a narrow document match.
-    var painted = window.getComputedStyle(content).backgroundColor;
-    document.documentElement.style.setProperty('--mdp-canvas', painted);
+    // github-markdown-css paints .markdown-body; mirror its colours onto the
+    // canvas so over-scroll, the area beside a narrow document, and chrome that
+    // lives outside .markdown-body (the floating TOC) match the document.
+    var computed = window.getComputedStyle(content);
+    document.documentElement.style.setProperty('--mdp-canvas', computed.backgroundColor);
+    document.documentElement.style.setProperty('--mdp-ink', computed.color);
   }
 
   function setMedia(id, enabled) {
@@ -594,6 +646,9 @@
       catch (error) { warnings.push('Task lists: ' + error.message); }
     }
     markBrokenImages(content);
+
+    try { buildToc(); }
+    catch (error) { warnings.push('Contents: ' + error.message); }
 
     // Explorer reuses the same page for the next selection; without this the new
     // document opens scrolled to wherever the previous one was.
@@ -657,6 +712,12 @@
         applyFontScale(state.settings.fontScalePercent);
         break;
 
+      case 'toc':
+        // The host's context-menu entry; a plain toggle so the menu needs no
+        // state of its own.
+        setTocVisible(!state.tocVisible);
+        break;
+
       default:
         break;
     }
@@ -676,6 +737,14 @@
     if (href.charAt(0) === '#') { return; }        // let the browser scroll
 
     event.preventDefault();
+
+    // A link to a sibling of the previewed document: the host resolves it to
+    // the real file and opens it with its default application.
+    if (href.indexOf(DOC_ORIGIN + '/') === 0) {
+      post({ kind: 'openDocument', url: href });
+      return;
+    }
+
     if (/^(https?|mailto):/i.test(href)) {
       post({ kind: 'openExternal', url: href });
     }
@@ -701,6 +770,11 @@
 
   var h = host();
   if (h) { h.addEventListener('message', onHostMessage); }
+
+  state.tocVisible = readTocPreference();
+  var tocHide = document.getElementById('toc-hide');
+  if (tocHide) { tocHide.addEventListener('click', function () { setTocVisible(false); }); }
+
   applyTheme('light');
   post({ kind: 'ready', version: VERSION });
 })();

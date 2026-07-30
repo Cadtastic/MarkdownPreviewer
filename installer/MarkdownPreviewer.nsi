@@ -501,7 +501,8 @@ Function SeedDefaultSettings
   !insertmacro SeedDword "Mermaid"           1
   !insertmacro SeedDword "Math"              1
   !insertmacro SeedDword "SingleDollarMath"  0
-  !insertmacro SeedDword "AllowRawHtml"      0
+  !insertmacro SeedDword "AllowRawHtml"      1
+  !insertmacro SeedDword "AllowRemoteImages" 0
   !insertmacro SeedDword "TaskLists"         1
   !insertmacro SeedDword "ShowFrontMatter"   1
   !insertmacro SeedDword "FollowSystemTheme" 1

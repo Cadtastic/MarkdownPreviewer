@@ -7,8 +7,15 @@ namespace MarkdownPreviewer.Domain.Rendering;
 /// Defaults are chosen for a passive previewer over untrusted input, which is a
 /// different threat model from an editor the user typed the document into:
 /// <list type="bullet">
-///   <item><see cref="AllowRawHtml"/> is off — a previewed file should not be
-///   able to smuggle markup into the render surface.</item>
+///   <item><see cref="AllowRawHtml"/> is on, but what renders is the sanitised
+///   form: scripts, frames, forms, event handlers and dangerous URL schemes are
+///   stripped, and CSP forbids inline script and network access independently.
+///   GitHub-style READMEs lean heavily on raw HTML (centering, badges,
+///   <c>&lt;details&gt;</c>), and showing them as escaped source reads as
+///   broken.</item>
+///   <item><see cref="AllowRemoteImages"/> is off — remote images are how
+///   tracking pixels work, and a previewer must not leak "this user looked at
+///   this file" to the network. Enabling it is a per-user choice.</item>
 ///   <item><see cref="SingleDollarMath"/> is off — enabling <c>$…$</c> makes
 ///   ordinary prose about money ("costs $5, sometimes $10") render as
 ///   mathematics, which is a worse failure than math not rendering.</item>
@@ -18,8 +25,13 @@ public sealed record RenderSettings
 {
     public static RenderSettings Default { get; } = new();
 
-    /// <summary>Render raw HTML embedded in the Markdown. Off by default.</summary>
-    public bool AllowRawHtml { get; init; }
+    /// <summary>Render (sanitised) raw HTML embedded in the Markdown.</summary>
+    public bool AllowRawHtml { get; init; } = true;
+
+    /// <summary>
+    /// Allow images from http(s) hosts. Off by default; see remarks on the type.
+    /// </summary>
+    public bool AllowRemoteImages { get; init; }
 
     /// <summary>Auto-link bare URLs.</summary>
     public bool Linkify { get; init; } = true;

@@ -20,16 +20,24 @@ does, but integrated where you already are.
 
 - **GitHub-flavoured rendering** — markdown-it with tables, task lists,
   autolinks, footnote-safe typography, and `github-markdown-css` styling
+- **Raw HTML, sanitised** — GitHub-style `<p align="center">`, badges,
+  `<details>`, `<kbd>` render like they do on GitHub; scripts, frames, forms and
+  event handlers are stripped, with CSP behind the sanitiser
 - **Syntax highlighting** — highlight.js, 64 curated languages
 - **Mermaid diagrams** — ` ```mermaid ` fences render as real diagrams
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
 - **Light/dark theming** — follows the Windows app colour mode, or pin one
+- **Floating table of contents** — hide it with its × button, bring it back
+  from the right-click menu
 - **Relative images resolve** — served through a virtual host, not `file://`
+- **Relative links open the real file** — click `docs/architecture.md` in a
+  README and it opens in that type's default app (inert document types only)
 - **Fast where it counts** — Mermaid (3.5 MB) and MathJax (2.1 MB) are injected
   only when a document actually uses them, so arrow-keying through a folder of
   plain READMEs stays instant
-- **Safe by default** — strict CSP, no network access, raw HTML off by default
-  and sanitised when enabled
+- **Private by default** — strict CSP, no network access; remote images
+  (badges) are a per-user opt-in because a passive previewer should not
+  announce what you clicked
 
 ## Why not just use PowerToys?
 
@@ -45,7 +53,7 @@ as literal text.
 | Mermaid diagrams | Yes, lazy-loaded | No |
 | LaTeX math | Yes, MathJax SVG, lazy-loaded | No |
 | Relative images | Yes, via a virtual host mapping | Limited |
-| Raw HTML | Off by default, sanitised when enabled | Off |
+| Raw HTML | On by default, always sanitised | Off |
 | Install footprint | ~7 MB plus the WebView2 runtime | Part of PowerToys |
 
 ## Requirements
@@ -156,7 +164,8 @@ unless noted. Bad values are clamped, never fatal.
 | `Mermaid` | 1 | Render ` ```mermaid ` fences as diagrams |
 | `Math` | 1 | Typeset LaTeX |
 | `SingleDollarMath` | **0** | Treat `$…$` as inline math — see below |
-| `AllowRawHtml` | **0** | Render embedded HTML — see below |
+| `AllowRawHtml` | 1 | Render embedded HTML (always sanitised — see below) |
+| `AllowRemoteImages` | **0** | Load images from http(s) hosts (badges) — see below |
 | `TaskLists` | 1 | `- [ ]` / `- [x]` as checkboxes |
 | `ShowFrontMatter` | 1 | Show YAML/TOML front matter in a collapsed block |
 | `FollowSystemTheme` | 1 | Follow the Windows apps colour mode |
@@ -165,7 +174,7 @@ unless noted. Bad values are clamped, never fatal.
 | `MaximumBytes` | 4194304 | Read cap; larger files are truncated with a notice |
 | `LogLevel` | *(absent)* | 0=Debug…3=Error. Absent disables logging entirely |
 
-### Two defaults that are deliberately "off"
+### Defaults that are deliberate decisions
 
 **`SingleDollarMath` = 0.** GitHub and QuickLook both enable `$…$`. The cost is
 that ordinary prose about money — "costs $5, sometimes $10" — renders as
@@ -173,11 +182,19 @@ mathematics. In a previewer the user did not opt into, silently mangling prose
 is worse than math not rendering. Turn it on if you write more LaTeX than
 invoices.
 
-**`AllowRawHtml` = 0.** The user clicked a file in Explorer; they did not agree
-to run its contents. With this on, a sanitiser strips `<script>`, `<iframe>`,
-`<form>`, every `on*` handler, and any `javascript:`/`file:` URL, and CSP blocks
-inline script independently — but off is still the right default for a passive
-previewer.
+**`AllowRemoteImages` = 0.** Remote images are how tracking pixels work: with
+them on, previewing a file can tell a third-party server that you looked at it.
+Off, badge images (shields.io and friends) show as labelled placeholders. Turn
+it on if you preview a lot of badge-heavy READMEs and accept the network
+traffic.
+
+**`AllowRawHtml` = 1 — but what renders is the sanitised form.** GitHub-style
+READMEs lean heavily on raw HTML (`<p align="center">`, badge rows,
+`<details>`), and showing that as escaped source reads as broken. Before
+anything reaches the DOM, a sanitiser strips `<script>`, `<iframe>`, `<form>`,
+every `on*` handler, and any `javascript:`/`file:` URL — and CSP forbids inline
+script and network access independently. Set it to 0 for strictly-Markdown
+rendering.
 
 Logging is off unless `LogLevel` is set, because the handler runs on every file
 selection and an always-on log would record the path of every Markdown file you
@@ -202,12 +219,17 @@ all local, nothing fetched at runtime:
 A previewed file is untrusted input, and the handler treats it that way:
 
 - The page runs under a strict CSP with `connect-src 'none'` — a Markdown file
-  cannot phone home.
+  cannot phone home. Remote images are additionally blocked host-side unless
+  the user opts in via `AllowRemoteImages`.
+- Raw HTML renders only after sanitisation: scripts, frames, forms, event
+  handlers, and dangerous URL schemes never reach the DOM.
 - The document's folder is exposed through a virtual host rather than `file://`,
   so it cannot read outside its own directory.
 - Navigation is blocked at the WebView2 level as well as in the page; link
   clicks are routed to the host, which re-validates the scheme before handing
-  anything to `ShellExecute`.
+  anything to `ShellExecute`. Links to sibling files open only if they resolve
+  inside the document's folder tree and match an allowlist of inert document
+  types — a README cannot phrase "click here" as a process launch.
 - The handler runs out-of-process in the shell's `prevhost.exe` surrogate, so a
   crash never takes Explorer down.
 

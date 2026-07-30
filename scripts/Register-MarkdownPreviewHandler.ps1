@@ -277,7 +277,8 @@ if ($PSCmdlet.ShouldProcess($roots.Settings, 'Seed default settings')) {
         Mermaid           = 1
         Math              = 1
         SingleDollarMath  = 0
-        AllowRawHtml      = 0
+        AllowRawHtml      = 1
+        AllowRemoteImages = 0
         TaskLists         = 1
         ShowFrontMatter   = 1
         FollowSystemTheme = 1
