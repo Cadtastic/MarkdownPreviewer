@@ -1,0 +1,34 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      The COM source generator emits SYSLIB1096 suggesting [GeneratedComInterface]
+      for every [ComImport] interface. We deliberately use the built-in COM
+      marshaller here: the shell calls us through a surrogate and classic
+      ComImport interop is the path with a decade of field evidence behind it.
+      Revisit if/when we move to NativeAOT.
+    -->
+    <NoWarn>$(NoWarn);SYSLIB1096</NoWarn>
+
+    <Product>Markdown Preview Handler</Product>
+    <Company>Addam Boord</Company>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Copyright>Copyright (c) 2026</Copyright>
+  </PropertyGroup>
+
+  <!-- x64 only: prevhost.exe is 64-bit on every supported Windows release. -->
+  <PropertyGroup>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+# Build output
+artifacts/
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Node (render-page tests only)
+node_modules/
+package-lock.json
+
+# Local logs
+*.log

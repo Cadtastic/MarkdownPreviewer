@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    The Microsoft.Web.WebView2 package references all three of its assemblies
+    (Core, WinForms, Wpf) regardless of which UI framework the project uses.
+    The Wpf one was compiled against WPF's WindowsBase 5.0, which a
+    WinForms-only project does not have — so ResolveAssemblyReferences emits
+    MSB3277 (version conflict on WindowsBase) for every project that sees the
+    package. Nothing here uses the WPF control, so drop that reference before
+    resolution runs. Must be a target (not a plain ItemGroup): package .targets
+    are imported after the project file, so an evaluation-time Remove would run
+    before the Include exists.
+  -->
+  <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)"
+                 Condition="$([System.String]::Copy('%(Reference.Identity)').Contains('Microsoft.Web.WebView2.Wpf'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

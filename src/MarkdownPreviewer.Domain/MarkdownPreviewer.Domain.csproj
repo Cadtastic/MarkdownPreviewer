@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Deliberately net8.0, not net8.0-windows. The domain must stay free of any
+      Windows dependency so it is trivially unit-testable and so the Dependency
+      Rule is enforced by the compiler rather than by convention.
+    -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>MarkdownPreviewer.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

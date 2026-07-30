@@ -1,0 +1,152 @@
+/*
+ * Layout chrome around github-markdown-css. Deliberately minimal: the GitHub
+ * stylesheet owns typography and colour, this file owns the frame, the lazy
+ * asset placeholders, and the diagnostics surface.
+ */
+
+:root {
+  --mdp-gutter: 24px;
+  --mdp-font-scale: 1;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  /* Matches github-markdown-css light/dark canvas so there is no flash of
+     white when the preview pane is dark. */
+  background: var(--mdp-canvas, transparent);
+}
+
+body {
+  overflow-y: scroll;   /* reserve the scrollbar; avoids reflow-on-render jitter */
+  overflow-x: auto;
+}
+
+.markdown-body {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: var(--mdp-gutter);
+  font-size: calc(14px * var(--mdp-font-scale));
+}
+
+/* The preview pane is narrow far more often than it is wide. */
+@media (max-width: 720px) {
+  :root { --mdp-gutter: 14px; }
+}
+
+/* --- front matter -------------------------------------------------------- */
+
+.mdp-frontmatter {
+  margin: 0 0 16px;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.mdp-frontmatter > summary {
+  cursor: default;
+  user-select: none;
+  font-weight: 600;
+}
+.mdp-frontmatter pre {
+  margin: 8px 0 2px;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+}
+
+/* --- task lists ---------------------------------------------------------- */
+
+.markdown-body li.mdp-task {
+  list-style-type: none;
+  margin-left: -1.4em;
+}
+.markdown-body li.mdp-task > input[type="checkbox"] {
+  margin: 0 0.4em 0.25em -0.2em;
+  vertical-align: middle;
+}
+
+/* --- mermaid ------------------------------------------------------------- */
+
+.mermaid-block {
+  margin: 16px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-block > pre.mermaid {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Pre-render state: show the source as a plain code block so the document is
+   never blank while the 3.5 MB mermaid bundle loads. */
+.mermaid-block > pre.mermaid:not([data-processed]) {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 85%;
+  text-align: left;
+  opacity: 0.55;
+}
+.mermaid-block[data-failed="true"] > pre.mermaid {
+  opacity: 1;
+  text-align: left;
+}
+
+/* --- math ---------------------------------------------------------------- */
+
+mjx-container[jax="SVG"][display="true"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+/* --- images -------------------------------------------------------------- */
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+/* A broken relative path is common (moved file, wrong case). Make it visible
+   rather than silently collapsing to a 0x0 box. */
+.markdown-body img.mdp-broken {
+  min-width: 120px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px dashed var(--borderColor-default, #d0d7de);
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+/* --- notices / diagnostics ---------------------------------------------- */
+
+.notice {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px var(--mdp-gutter);
+  font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
+  border-bottom: 1px solid var(--borderColor-default, #d0d7de);
+  background: var(--bgColor-attention-muted, #fff8c5);
+  color: var(--fgColor-default, #1f2328);
+}
+.notice[data-severity="error"] {
+  background: var(--bgColor-danger-muted, #ffebe9);
+}
+.notice code {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+/* --- print (Explorer's preview pane can be printed via the frame) -------- */
+
+@media print {
+  body { overflow: visible; }
+  .notice { display: none; }
+  .markdown-body { max-width: none; padding: 0; }
+}

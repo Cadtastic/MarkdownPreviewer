@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>MarkdownPreviewer.Tests</RootNamespace>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+
+    <!--
+      CA1707 flags underscores in member names. Method_ExpectedBehaviour is the
+      idiomatic xUnit naming convention, so the rule does not apply to tests.
+    -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The Rendering and Shell projects are intentionally NOT referenced. They
+      require WebView2 and a live COM host, so covering them here would mean
+      mocking the browser — which tests the mock, not the code. Their behaviour is
+      exercised through the Harness project instead.
+    -->
+    <ProjectReference Include="..\..\src\MarkdownPreviewer.Domain\MarkdownPreviewer.Domain.csproj" />
+    <ProjectReference Include="..\..\src\MarkdownPreviewer.Application\MarkdownPreviewer.Application.csproj" />
+    <ProjectReference Include="..\..\src\MarkdownPreviewer.Infrastructure\MarkdownPreviewer.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

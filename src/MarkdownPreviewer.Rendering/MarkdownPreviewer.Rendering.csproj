@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <RootNamespace>MarkdownPreviewer.Rendering</RootNamespace>
+    <!--
+      WinForms is confined to this project. It is here and nowhere else because
+      the WebView2 control needs a Win32 parent, and a preview handler's parent is
+      an HWND handed to us by prevhost.exe. Nothing in Domain, Application or
+      Infrastructure references a UI framework.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Matches the installer's Windows 10 1809 minimum; see Infrastructure.csproj. -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MarkdownPreviewer.Application\MarkdownPreviewer.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!--
+  Render surface for the Markdown Explorer preview handler.
+
+  This page is served from the virtual host https://assets.mdpreview.invalid/,
+  mapped by the host process to <install dir>\assets\web. The previewed
+  document's own directory is mapped to https://doc.mdpreview.invalid/ so that
+  relative image references resolve without granting file:// access.
+
+  Everything is local. connect-src is 'none' — a previewed Markdown file must
+  never be able to phone home, because the user only clicked a file in Explorer.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src   'none';
+    script-src    https://assets.mdpreview.invalid;
+    style-src     https://assets.mdpreview.invalid 'unsafe-inline';
+    img-src       https://doc.mdpreview.invalid https://assets.mdpreview.invalid data: blob:;
+    font-src      https://assets.mdpreview.invalid data:;
+    connect-src   'none';
+    frame-src     'none';
+    object-src    'none';
+    base-uri      'none';
+    form-action   'none';
+  " />
+  <meta name="referrer" content="no-referrer" />
+  <title>Markdown Preview</title>
+
+  <!--
+    Themes are toggled with media="not all" rather than the `disabled` attribute:
+    media is unambiguously spec'd, applies before first paint, and avoids the
+    flash-of-wrong-theme you get when disabling stylesheets from script.
+  -->
+  <link id="css-body-light" rel="stylesheet" href="css/github-markdown-light.css" media="all" />
+  <link id="css-body-dark"  rel="stylesheet" href="css/github-markdown-dark.css"  media="not all" />
+  <link id="css-code-light" rel="stylesheet" href="css/github.min.css"            media="all" />
+  <link id="css-code-dark"  rel="stylesheet" href="css/github-dark.min.css"       media="not all" />
+  <link rel="stylesheet" href="css/preview.css" />
+</head>
+<body>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <article id="content" class="markdown-body"></article>
+
+  <!-- Always-on core: ~360 KB total. Mermaid (3.5 MB) and MathJax (2.1 MB) are
+       injected on demand by preview.js only when the document needs them. -->
+  <script src="js/markdown-it.min.js"></script>
+  <script src="js/markdownItAnchor.umd.js"></script>
+  <script src="js/highlight.min.js"></script>
+  <script src="js/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "markdownpreviewer-web-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests for the render page (preview.js) that runs inside WebView2.",
+  "scripts": {
+    "test": "node render.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^27.0.0"
+  }
+}
