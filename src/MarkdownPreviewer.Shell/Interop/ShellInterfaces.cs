@@ -79,12 +79,54 @@ internal interface IInitializeWithFile
 /// <summary>
 /// <c>IInitializeWithStream</c> — initialisation from a stream.
 /// </summary>
+/// <remarks>
+/// Deliberately NOT implemented by <c>MarkdownPreviewHandler</c>. The shell
+/// prefers it over every other initialisation interface, and a stream carries no
+/// directory (its <c>Stat</c> name is a bare file name), which would make
+/// relative images unresolvable for ordinary on-disk files. Omitting it makes
+/// the shell fall through to <see cref="IInitializeWithItem"/>, which has the
+/// real path — and still covers stream-only items via the item's own stream.
+/// </remarks>
 [ComImport]
 [Guid("b824b49d-22ac-4161-ac8a-9916e8fa3f7f")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IInitializeWithStream
 {
     [PreserveSig] int Initialize(IStream stream, uint mode);
+}
+
+/// <summary>
+/// <c>IInitializeWithItem</c> — initialisation from a shell item.
+/// </summary>
+[ComImport]
+[Guid("7f73be3f-fb79-493c-a6c7-7ee14e245841")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IInitializeWithItem
+{
+    [PreserveSig] int Initialize(IShellItem item, uint mode);
+}
+
+/// <summary>
+/// <c>IShellItem</c> — the shell's handle to a namespace object.
+/// </summary>
+/// <remarks>Public because it appears in the signature of a public COM method on
+/// <c>MarkdownPreviewHandler</c>; the structs in NativeStructures.cs are public
+/// for the same reason.</remarks>
+[ComImport]
+[Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IShellItem
+{
+    [PreserveSig] int BindToHandler(IntPtr bindContext, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+
+    [PreserveSig] int GetParent(out IShellItem parent);
+
+    /// <param name="sigdnName">A SIGDN value; the string is CoTaskMem-allocated.</param>
+    [PreserveSig] int GetDisplayName(uint sigdnName, out IntPtr name);
+
+    [PreserveSig] int GetAttributes(uint mask, out uint attributes);
+
+    [PreserveSig] int Compare(IShellItem other, uint hint, out int order);
 }
 
 /// <summary>

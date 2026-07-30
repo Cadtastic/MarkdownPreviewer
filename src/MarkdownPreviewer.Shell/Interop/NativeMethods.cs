@@ -16,6 +16,15 @@ internal static partial class NativeMethods
     /// <summary>Storage mode for read-only shell initialisation (<c>STGM_READ</c>).</summary>
     public const uint STGM_READ = 0x00000000;
 
+    /// <summary><c>SIGDN_FILESYSPATH</c> — the item's file-system path, when it has one.</summary>
+    public const uint SIGDN_FILESYSPATH = 0x80058000;
+
+    /// <summary><c>BHID_Stream</c> — bind an <c>IShellItem</c> to its content stream.</summary>
+    public static readonly Guid BhidStream = new("1CEBB3AB-7C10-499a-A417-92CA16C4CB83");
+
+    /// <summary>IID of <c>IStream</c>.</summary>
+    public static readonly Guid IidIStream = new("0000000c-0000-0000-C000-000000000046");
+
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial IntPtr SetParent(IntPtr child, IntPtr newParent);
 
@@ -25,4 +34,15 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsWindow(IntPtr hwnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(IntPtr hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetWindowRect(IntPtr hwnd, out RECT rect);
 }

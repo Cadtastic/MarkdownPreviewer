@@ -26,21 +26,33 @@ namespace MarkdownPreviewer.Shell.Hosting;
 /// <para>The thread starts lazily on the first <see cref="Invoke"/> or
 /// <see cref="Post"/>, so a handler that is initialised and torn down without ever
 /// previewing never pays for it.</para>
+///
+/// <para><b>One thread per process, not per handler.</b> prevhost.exe hosts
+/// several handler instances over its lifetime (one per previewed document), and
+/// the WebView2 environment — cached process-wide — is affine to the thread that
+/// created it: a second handler with its own thread gets
+/// "CoreWebView2Environment members can only be accessed from the UI thread".
+/// So every handler shares <see cref="Shared"/>. The thread is a background
+/// thread and is reclaimed by process exit, which is also what reclaims the
+/// browser: the shell terminates the surrogate once the pane goes idle.</para>
 /// </remarks>
-internal sealed class PreviewUiThread(IDiagnosticLog log) : IDisposable
+internal sealed class PreviewUiThread(IDiagnosticLog log)
 {
+    private static readonly Lazy<PreviewUiThread> LazyShared =
+        new(() => new PreviewUiThread(Composition.PreviewComposition.Log), isThreadSafe: true);
+
+    /// <summary>The process-wide preview UI thread.</summary>
+    public static PreviewUiThread Shared => LazyShared.Value;
+
     private readonly object _gate = new();
 
-    private Thread? _thread;
     private SynchronizationContext? _context;
-    private volatile bool _disposed;
 
     /// <summary>Runs <paramref name="work"/> on the UI thread and waits for it.</summary>
     /// <remarks>Exceptions propagate back to the caller, so callers keep their
     /// existing HRESULT conversion.</remarks>
     public void Invoke(Action work)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
         EnsureStarted().Send(_ => work(), null);
     }
 
@@ -49,11 +61,6 @@ internal sealed class PreviewUiThread(IDiagnosticLog log) : IDisposable
     /// caller left to observe them, and nothing may throw into the surrogate.</remarks>
     public void Post(Action work)
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         EnsureStarted().Post(_ =>
         {
             try
@@ -79,7 +86,7 @@ internal sealed class PreviewUiThread(IDiagnosticLog log) : IDisposable
             using var ready = new ManualResetEventSlim();
             SynchronizationContext? created = null;
 
-            _thread = new Thread(() =>
+            var thread = new Thread(() =>
             {
                 // The WinForms context makes every await in the render pipeline
                 // resume on this thread; Application.Run supplies the pump that
@@ -98,47 +105,13 @@ internal sealed class PreviewUiThread(IDiagnosticLog log) : IDisposable
                 IsBackground = true,
             };
 
-            _thread.SetApartmentState(ApartmentState.STA);
-            _thread.Start();
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
             ready.Wait();
 
             _context = created;
-            log.Debug("Started the preview UI thread.");
+            log.Debug($"Started the preview UI thread (managed thread {thread.ManagedThreadId}).");
             return _context!;
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-
-        SynchronizationContext? context;
-        Thread? thread;
-        lock (_gate)
-        {
-            context = _context;
-            thread = _thread;
-            _context = null;
-            _thread = null;
-        }
-
-        if (context is null || thread is null)
-        {
-            return;
-        }
-
-        context.Post(_ => System.Windows.Forms.Application.ExitThread(), null);
-
-        // Bounded: the surrogate may be about to exit, and a wedged message loop
-        // must not stop it. A background thread cannot hold the process open.
-        if (!thread.Join(TimeSpan.FromSeconds(5)))
-        {
-            log.Warn("The preview UI thread did not exit within 5 seconds.");
         }
     }
 }

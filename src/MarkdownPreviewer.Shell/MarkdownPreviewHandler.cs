@@ -47,7 +47,7 @@ public sealed class MarkdownPreviewHandler :
     IPreviewHandler,
     IPreviewHandlerVisuals,
     IInitializeWithFile,
-    IInitializeWithStream,
+    IInitializeWithItem,
     IObjectWithSite,
     IOleWindow,
     IDisposable
@@ -86,7 +86,11 @@ public sealed class MarkdownPreviewHandler :
                 StringComparison.OrdinalIgnoreCase),
             "RegistryKeys.PreviewHandlerClsid disagrees with the [Guid] on MarkdownPreviewHandler.");
 
-        _log.Info("Markdown preview handler created.");
+        // The location pins down WHICH build is answering — prevhost caches
+        // loaded DLLs and machines accumulate per-user and per-machine
+        // registrations, so "which binary is this log from" must never be a
+        // guessing game.
+        _log.Info($"Markdown preview handler created ({GetType().Assembly.Location}).");
     }
 
     // ============================================================ IPreviewHandler
@@ -98,6 +102,7 @@ public sealed class MarkdownPreviewHandler :
 
         return Guard(nameof(SetWindow), () =>
         {
+            _log.Debug($"SetWindow: parent=0x{hwnd:X}, bounds={bounds}.");
             _parentHandle = hwnd;
             _bounds = bounds;
 
@@ -115,6 +120,7 @@ public sealed class MarkdownPreviewHandler :
         Rectangle bounds = rect.ToRectangle();
         return Guard(nameof(SetRect), () =>
         {
+            _log.Debug($"SetRect: bounds={bounds}.");
             _bounds = bounds;
 
             if (_window is not null)
@@ -130,6 +136,8 @@ public sealed class MarkdownPreviewHandler :
     {
         return Guard(nameof(DoPreview), () =>
         {
+            _log.Debug("DoPreview.");
+
             if (_activeReader is null || !_activeReader.HasSource)
             {
                 _log.Warn("DoPreview was called before initialisation.");
@@ -157,6 +165,7 @@ public sealed class MarkdownPreviewHandler :
     {
         return Guard(nameof(Unload), () =>
         {
+            _log.Debug("Unload.");
             _fileReader.Reset();
             _streamReader.Reset();
             _activeReader = null;
@@ -304,21 +313,71 @@ public sealed class MarkdownPreviewHandler :
         });
     }
 
-    public int Initialize(IStream stream, uint mode)
+    /// <summary>
+    /// Initialisation from a shell item — Explorer's path once
+    /// <c>IInitializeWithStream</c> is (deliberately) absent.
+    /// </summary>
+    /// <remarks>
+    /// A file-system item yields its real path, which is what lets relative
+    /// images resolve. Items with no path — a document inside a .zip, a search
+    /// result — fall back to the item's own stream, with the name recovered for
+    /// logs and messages.
+    /// </remarks>
+    public int Initialize(IShellItem item, uint mode)
     {
-        return Guard(nameof(IInitializeWithStream), () =>
+        return Guard(nameof(IInitializeWithItem), () =>
         {
-            if (stream is null)
+            if (item is null)
             {
                 return HResult.InvalidArgument;
             }
 
-            _streamReader.SetStream(stream);
-            _fileReader.Reset();
-            _activeReader = _streamReader;
+            try
+            {
+                int hr = item.GetDisplayName(NativeMethods.SIGDN_FILESYSPATH, out IntPtr pathPtr);
+                if (hr >= 0 && pathPtr != IntPtr.Zero)
+                {
+                    string? path = Marshal.PtrToStringUni(pathPtr);
+                    Marshal.FreeCoTaskMem(pathPtr);
 
-            _log.Info("Initialised from a stream; relative images will not resolve.");
-            return HResult.Ok;
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        _fileReader.SetFile(path);
+                        _streamReader.Reset();
+                        _activeReader = _fileReader;
+
+                        _log.Info($"Initialised from item: {path}");
+                        return HResult.Ok;
+                    }
+                }
+
+                Guid bhid = NativeMethods.BhidStream;
+                Guid iid = NativeMethods.IidIStream;
+                hr = item.BindToHandler(IntPtr.Zero, ref bhid, ref iid, out IntPtr streamPtr);
+                if (hr < 0 || streamPtr == IntPtr.Zero)
+                {
+                    _log.Warn($"The shell item has neither a file-system path nor a stream (0x{hr:X8}).");
+                    return hr < 0 ? hr : HResult.Fail;
+                }
+
+                var stream = (IStream)Marshal.GetObjectForIUnknown(streamPtr);
+                Marshal.Release(streamPtr);
+
+                _streamReader.SetStream(stream);
+                _fileReader.Reset();
+                _activeReader = _streamReader;
+
+                _log.Info($"Initialised from an item stream ('{_streamReader.DisplayName}'); " +
+                          "relative images will not resolve.");
+                return HResult.Ok;
+            }
+            finally
+            {
+                if (Marshal.IsComObject(item))
+                {
+                    Marshal.ReleaseComObject(item);
+                }
+            }
         });
     }
 
@@ -407,7 +466,10 @@ public sealed class MarkdownPreviewHandler :
 
     private void EnsureWindowAndSession()
     {
-        _uiThread ??= new PreviewUiThread(_log);
+        // Shared, not per-handler: the process-wide WebView2 environment is
+        // affine to the thread that created it, and prevhost hosts several
+        // handler instances per process.
+        _uiThread ??= PreviewUiThread.Shared;
 
         // Synchronous on purpose: the shell may call GetWindow the moment
         // DoPreview returns, so the window (and its cached handle) must exist
@@ -416,7 +478,7 @@ public sealed class MarkdownPreviewHandler :
         Rectangle bounds = _bounds;
         _uiThread.Invoke(() =>
         {
-            _window ??= new PreviewHostWindow();
+            _window ??= new PreviewHostWindow(_log);
             _window.AttachTo(parent, bounds);
             _windowHandle = _window.Handle;
 
@@ -565,7 +627,8 @@ public sealed class MarkdownPreviewHandler :
                 _log.Warn("Tearing down on the preview UI thread failed.", ex);
             }
 
-            _uiThread.Dispose();
+            // The UI thread itself is shared across handler instances and lives
+            // until the surrogate exits; only this handler's use of it ends here.
             _uiThread = null;
         }
 

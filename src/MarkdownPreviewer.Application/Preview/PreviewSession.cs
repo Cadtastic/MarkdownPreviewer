@@ -71,6 +71,15 @@ public sealed class PreviewSession : IAsyncDisposable
             Domain.Documents.MarkdownDocument document =
                 await reader.ReadAsync(settings.MaximumBytes, token).ConfigureAwait(true);
 
+            if (_log.IsEnabled(DiagnosticLevel.Debug))
+            {
+                string identity = document.Location.HasDirectory
+                    ? document.Location.ToString()
+                    : $"{document.Location.FileName} (no directory — relative images will not resolve)";
+                _log.Debug($"Read '{identity}': {document.Source.Length:N0} chars, " +
+                           $"truncated={document.WasTruncated}.");
+            }
+
             if (document.WasTruncated)
             {
                 _log.Warn($"Truncated '{document.Location}' at {settings.MaximumBytes:N0} bytes " +

@@ -129,9 +129,18 @@ mathematics.
 
 ### Two virtual hosts, no `file://`
 
-The page is served from `https://assets.mdpreview.invalid/` and the previewed
-document's own folder from `https://doc.mdpreview.invalid/`, both via
-`SetVirtualHostNameToFolderMapping`.
+The page is served from `https://assets.mdpreview.invalid/` via
+`SetVirtualHostNameToFolderMapping`, established before the first navigation.
+
+The previewed document's own folder is `https://doc.mdpreview.invalid/`, and it
+is **not** a folder mapping: a `SetVirtualHostNameToFolderMapping` issued after
+`index.html` has committed never applies to the already-loaded document
+(verified empirically), and this pipeline keeps one page alive across
+selections precisely so Mermaid/MathJax stay warm. Document images are instead
+answered by a `WebResourceRequested` handler that reads the current document
+directory per request — image context only, GET only, canonicalised and
+confined to that directory — so a selection change takes effect instantly with
+no re-navigation.
 
 Serving the page from `file://` would either grant it read access across the disk
 or, with local-file restrictions on, break relative images. The virtual host gives

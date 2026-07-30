@@ -29,10 +29,13 @@ namespace MarkdownPreviewer.Rendering.WebView;
 /// token is stale is dropped rather than applied.</para>
 ///
 /// <para><b>Virtual hosts.</b> The page is served from
-/// <c>assets.mdpreview.invalid</c> and the previewed document's own folder from
-/// <c>doc.mdpreview.invalid</c>. The <c>.invalid</c> TLD is reserved by RFC 2606
-/// and can never resolve in DNS, so if a mapping is ever missing the request fails
-/// locally and instantly instead of leaking a lookup onto the network.</para>
+/// <c>assets.mdpreview.invalid</c> via a folder mapping; the previewed
+/// document's own folder is <c>doc.mdpreview.invalid</c>, answered by
+/// <see cref="OnWebResourceRequested"/> because a folder mapping added after the
+/// page has committed never applies to it. The <c>.invalid</c> TLD is reserved
+/// by RFC 2606 and can never resolve in DNS, so if a host is ever unhandled the
+/// request fails locally and instantly instead of leaking a lookup onto the
+/// network.</para>
 /// </remarks>
 public sealed class WebView2PreviewSurface : IPreviewSurface
 {
@@ -140,6 +143,14 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 _assets.WebRootPath,
                 CoreWebView2HostResourceAccessKind.DenyCors);
 
+            // The document host is answered by hand in OnWebResourceRequested,
+            // NOT by a folder mapping: a mapping added after index.html has
+            // committed never applies to the already-loaded document, and the
+            // document folder changes with every selection. Images only — the
+            // page's CSP allows nothing else from this host anyway.
+            webView.CoreWebView2.AddWebResourceRequestedFilter(
+                "https://" + DocumentHost + "/*", CoreWebView2WebResourceContext.Image);
+
             _log.Info($"Navigating the preview surface to {PageUrl}.");
             webView.CoreWebView2.Navigate(PageUrl);
 
@@ -232,6 +243,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         core.DocumentTitleChanged += (_, _) => { /* no chrome to update; kept for tracing */ };
         core.ContextMenuRequested += OnContextMenuRequested;
         core.PermissionRequested += OnPermissionRequested;
+        core.WebResourceRequested += OnWebResourceRequested;
     }
 
     // --------------------------------------------------------------- render ---
@@ -329,43 +341,86 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     /// Points <c>doc.mdpreview.invalid</c> at the current document's folder.
     /// </summary>
     /// <remarks>
-    /// Remapped only when the folder actually changes: browsing a folder of
-    /// Markdown files would otherwise tear down and rebuild the mapping on every
-    /// arrow-key press. When the document has no folder (stream initialisation)
-    /// the mapping is cleared, and relative images resolve to an unmapped
-    /// <c>.invalid</c> host, which fails locally and renders as a broken-image
-    /// marker — the intended degradation.
+    /// Not a <c>SetVirtualHostNameToFolderMapping</c> call, deliberately: a
+    /// folder mapping added after <c>index.html</c> has committed never applies
+    /// to the already-loaded document, and this pipeline keeps one page alive
+    /// across selections. The doc host is served by
+    /// <see cref="OnWebResourceRequested"/>, which reads this field per request
+    /// — so a directory switch takes effect instantly, with no re-navigation.
+    /// When the document has no folder (stream-fed items) requests 404 locally
+    /// and render as the broken-image marker — the intended degradation.
     /// </remarks>
     private void ApplyDocumentHostMapping(DocumentLocation location)
     {
-        CoreWebView2 core = _webView!.CoreWebView2;
         string? directory = location.HasDirectory ? location.DirectoryPath : null;
 
-        if (string.Equals(directory, _mappedDocumentDirectory, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(directory, _mappedDocumentDirectory, StringComparison.OrdinalIgnoreCase))
         {
-            return;
-        }
-
-        if (_mappedDocumentDirectory is not null)
-        {
-            try
-            {
-                core.ClearVirtualHostNameToFolderMapping(DocumentHost);
-            }
-            catch (Exception ex)
-            {
-                _log.Debug($"Clearing the document host mapping failed: {ex.Message}");
-            }
-        }
-
-        if (directory is not null)
-        {
-            core.SetVirtualHostNameToFolderMapping(
-                DocumentHost, directory, CoreWebView2HostResourceAccessKind.DenyCors);
+            _log.Debug($"Document host now serves: {directory ?? "<nothing>"}.");
         }
 
         _mappedDocumentDirectory = directory;
     }
+
+    /// <summary>
+    /// Serves document-relative image requests from the current document's
+    /// folder. Scoped by the filter to images on <c>doc.mdpreview.invalid</c>.
+    /// </summary>
+    private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        CoreWebView2Environment environment = _webView!.CoreWebView2.Environment;
+
+        try
+        {
+            string? directory = _mappedDocumentDirectory;
+
+            if (directory is null ||
+                !string.Equals(e.Request.Method, "GET", StringComparison.OrdinalIgnoreCase))
+            {
+                e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+                return;
+            }
+
+            var uri = new Uri(e.Request.Uri);
+            string relative = Uri.UnescapeDataString(uri.AbsolutePath)
+                .TrimStart('/')
+                .Replace('/', Path.DirectorySeparatorChar);
+
+            // Canonicalise and confine to the document's folder: "../" and
+            // absolute-path tricks must not escape it.
+            string root = Path.GetFullPath(directory + Path.DirectorySeparatorChar);
+            string full = Path.GetFullPath(Path.Combine(root, relative));
+            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(full))
+            {
+                e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+                return;
+            }
+
+            var stream = new FileStream(
+                full, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+
+            e.Response = environment.CreateWebResourceResponse(
+                stream, 200, "OK", $"Content-Type: {MimeTypeFor(Path.GetExtension(full))}");
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Serving '{e.Request.Uri}' failed: {ex.Message}");
+            e.Response = environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+        }
+    }
+
+    private static string MimeTypeFor(string extension) => extension.ToLowerInvariant() switch
+    {
+        ".svg" => "image/svg+xml",
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".webp" => "image/webp",
+        ".bmp" => "image/bmp",
+        ".ico" => "image/x-icon",
+        ".avif" => "image/avif",
+        _ => "application/octet-stream",
+    };
 
     // ---------------------------------------------------------------- theme ---
 
@@ -670,6 +725,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                     core.ProcessFailed -= OnProcessFailed;
                     core.ContextMenuRequested -= OnContextMenuRequested;
                     core.PermissionRequested -= OnPermissionRequested;
+                    core.WebResourceRequested -= OnWebResourceRequested;
                 }
             }
             catch (Exception ex)

@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using MarkdownPreviewer.Application.Abstractions;
 using MarkdownPreviewer.Shell.Interop;
 
 namespace MarkdownPreviewer.Shell.Hosting;
@@ -8,34 +9,30 @@ namespace MarkdownPreviewer.Shell.Hosting;
 /// A borderless child window that lives inside the HWND the preview host gives us.
 /// </summary>
 /// <remarks>
-/// Why a <see cref="Form"/> and not a <see cref="UserControl"/>: WebView2 needs a
-/// real parent window with a message loop, and <c>Form</c> is the only WinForms
-/// type that reliably creates a standalone HWND we can then reparent. The trick is
-/// to inject <c>WS_CHILD</c> and the parent handle through
-/// <see cref="CreateParams"/> <em>before</em> the handle is created, which produces
-/// a correctly-styled child in one step instead of creating a top-level popup and
-/// converting it afterwards (which flickers and briefly steals activation).
+/// <para>Why a <see cref="Control"/> and not a <see cref="Form"/>: a control IS a
+/// child window. Its <see cref="Control.Visible"/> maps directly onto
+/// <c>WS_VISIBLE</c> and its bounds onto <c>SetWindowPos</c>, with none of a
+/// form's top-level machinery in between. An earlier revision used a
+/// <see cref="Form"/> with <c>WS_CHILD</c> injected through
+/// <see cref="CreateParams"/>; the form's visibility pipeline — which still
+/// believed it was top-level — never applied <c>WS_VISIBLE</c> and offset the
+/// bounds by phantom non-client margins, which showed up as a rendered-but-blank
+/// preview pane.</para>
 ///
+/// <para>The parent is a raw HWND owned by the preview host (prevhost.exe), not a
+/// WinForms control, so it is injected through <see cref="CreateParams.Parent"/>
+/// before the handle is created rather than via <see cref="Control.Parent"/>.
 /// Consequence: <see cref="AttachTo"/> must be called before anything touches
-/// <see cref="Control.Handle"/>.
+/// <see cref="Control.Handle"/>.</para>
 /// </remarks>
-internal sealed class PreviewHostWindow : Form
+internal sealed class PreviewHostWindow : Control
 {
+    private readonly IDiagnosticLog _log;
     private IntPtr _parentHandle;
 
-    public PreviewHostWindow()
+    public PreviewHostWindow(IDiagnosticLog log)
     {
-        FormBorderStyle = FormBorderStyle.None;
-        ControlBox = false;
-        MinimizeBox = false;
-        MaximizeBox = false;
-        ShowInTaskbar = false;
-        ShowIcon = false;
-        Text = string.Empty;
-        StartPosition = FormStartPosition.Manual;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        Padding = Padding.Empty;
-        Margin = Padding.Empty;
+        _log = log;
 
         SetStyle(
             ControlStyles.AllPaintingInWmPaint |
@@ -50,14 +47,13 @@ internal sealed class PreviewHostWindow : Form
         {
             CreateParams parameters = base.CreateParams;
 
+            parameters.Style |= NativeMethods.WS_CHILD |
+                                NativeMethods.WS_CLIPCHILDREN |
+                                NativeMethods.WS_CLIPSIBLINGS;
+            parameters.ExStyle |= NativeMethods.WS_EX_CONTROLPARENT;
+
             if (_parentHandle != IntPtr.Zero)
             {
-                parameters.Style |= NativeMethods.WS_CHILD |
-                                    NativeMethods.WS_CLIPCHILDREN |
-                                    NativeMethods.WS_CLIPSIBLINGS;
-                parameters.Style &= ~NativeMethods.WS_POPUP;
-                parameters.ExStyle &= ~NativeMethods.WS_EX_APPWINDOW;
-                parameters.ExStyle |= NativeMethods.WS_EX_CONTROLPARENT;
                 parameters.Parent = _parentHandle;
             }
 
@@ -76,11 +72,23 @@ internal sealed class PreviewHostWindow : Form
             throw new ArgumentException("The preview host supplied an invalid window handle.", nameof(parent));
         }
 
+        if (_log.IsEnabled(DiagnosticLevel.Debug))
+        {
+            NativeMethods.GetWindowThreadProcessId(parent, out uint parentPid);
+            NativeMethods.GetWindowRect(parent, out RECT parentRect);
+            _log.Debug(
+                $"AttachTo: parent=0x{parent:X} (pid {parentPid}, " +
+                $"{parentRect.Width}x{parentRect.Height}, " +
+                $"visible={NativeMethods.IsWindowVisible(parent)}), " +
+                $"requested bounds={bounds}, created={IsHandleCreated}.");
+        }
+
         if (IsHandleCreated && _parentHandle != parent)
         {
             // The host moved us — happens when the preview pane is re-docked.
             _parentHandle = parent;
             NativeMethods.SetParent(Handle, parent);
+            _log.Debug($"AttachTo: reparented existing window 0x{Handle:X}.");
         }
         else
         {
@@ -90,6 +98,13 @@ internal sealed class PreviewHostWindow : Form
 
         Resize(bounds);
         Visible = true;
+
+        if (_log.IsEnabled(DiagnosticLevel.Debug))
+        {
+            _log.Debug(
+                $"AttachTo: window=0x{Handle:X}, bounds={Bounds}, " +
+                $"visible={NativeMethods.IsWindowVisible(Handle)}.");
+        }
     }
 
     /// <summary>Repositions the window, for <c>IPreviewHandler.SetRect</c>.</summary>
@@ -107,10 +122,4 @@ internal sealed class PreviewHostWindow : Form
             Math.Max(bounds.Width, 0),
             Math.Max(bounds.Height, 0));
     }
-
-    /// <summary>
-    /// Suppresses activation. A preview pane must never steal focus from the file
-    /// list; the user is still arrow-keying through files.
-    /// </summary>
-    protected override bool ShowWithoutActivation => true;
 }

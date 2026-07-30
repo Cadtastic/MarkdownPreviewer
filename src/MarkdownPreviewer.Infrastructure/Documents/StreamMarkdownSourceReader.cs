@@ -19,19 +19,40 @@ namespace MarkdownPreviewer.Infrastructure.Documents;
 public sealed class StreamMarkdownSourceReader : IMarkdownSourceReader
 {
     private IStream? _stream;
+    private DocumentLocation _location = DocumentLocation.Unknown;
 
     public bool HasSource => _stream is not null;
 
-    /// <summary>Called from <c>IInitializeWithStream.Initialize</c>.</summary>
+    /// <summary>
+    /// The document's name as reported by the stream, or an empty string.
+    /// </summary>
+    public string DisplayName => _location.FileName;
+
+    /// <summary>Called when the host supplies a stream instead of a path.</summary>
     public void SetStream(IStream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
         Reset();
         _stream = stream;
+
+        // Stat usually reports at least a bare file name ("readme.md"), which is
+        // worth having for logs and messages. It is never a directory, so this
+        // does not make relative references resolvable.
+        try
+        {
+            stream.Stat(out System.Runtime.InteropServices.ComTypes.STATSTG stat, 0 /* STATFLAG_DEFAULT */);
+            _location = DocumentLocation.FromDisplayName(stat.pwcsName);
+        }
+        catch (Exception)
+        {
+            _location = DocumentLocation.Unknown;
+        }
     }
 
     public void Reset()
     {
+        _location = DocumentLocation.Unknown;
+
         if (_stream is null)
         {
             return;
@@ -76,7 +97,7 @@ public sealed class StreamMarkdownSourceReader : IMarkdownSourceReader
         }
 
         string text = MarkdownTextDecoder.Decode(bytes.AsSpan(0, length));
-        var document = new MarkdownDocument(text, DocumentLocation.Unknown, truncated, memory.Length);
+        var document = new MarkdownDocument(text, _location, truncated, memory.Length);
         return Task.FromResult(document);
     }
 

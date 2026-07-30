@@ -68,6 +68,18 @@ public sealed class DocumentLocation : IEquatable<DocumentLocation>
         return new DocumentLocation(full, directory);
     }
 
+    /// <summary>
+    /// Creates a location that knows the document's name but not where it lives.
+    /// </summary>
+    /// <remarks>
+    /// Used when a stream-initialised document reports a name through
+    /// <c>IStream.Stat</c> — enough to identify it in logs and messages, not
+    /// enough to resolve relative references: <see cref="HasDirectory"/> stays
+    /// false. Blank input yields <see cref="Unknown"/>.
+    /// </remarks>
+    public static DocumentLocation FromDisplayName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? Unknown : new DocumentLocation(name.Trim(), null);
+
     public bool Equals(DocumentLocation? other) =>
         other is not null &&
         string.Equals(FullPath, other.FullPath, StringComparison.OrdinalIgnoreCase);
