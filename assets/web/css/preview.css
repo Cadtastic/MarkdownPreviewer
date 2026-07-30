@@ -149,14 +149,45 @@ mjx-container[jax="SVG"][display="true"] {
 .mdp-toc-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px 6px 12px;
+  gap: 4px;
+  padding: 6px 8px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  cursor: pointer;
+  user-select: none;
 }
 
 .mdp-toc-title {
+  flex: 1;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.mdp-toc-collapse {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.mdp-toc-collapse:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+/* Collapsed: just the "Contents" pill, parked where the panel was. */
+.mdp-toc.mdp-collapsed {
+  width: auto;
+}
+.mdp-toc.mdp-collapsed .mdp-toc-header {
+  border-bottom: 0;
+}
+.mdp-toc.mdp-collapsed .mdp-toc-list {
+  display: none;
 }
 
 .mdp-toc-hide {

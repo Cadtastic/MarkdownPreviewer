@@ -27,8 +27,11 @@ does, but integrated where you already are.
 - **Mermaid diagrams** — ` ```mermaid ` fences render as real diagrams
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
 - **Light/dark theming** — follows the Windows app colour mode, or pin one
-- **Floating table of contents** — hide it with its × button, bring it back
-  from the right-click menu
+- **Floating table of contents** — collapse it to a pill with its chevron,
+  hide it with its × button, bring it back from the right-click menu
+- **Share the document, not a dead link** — right-click → "Share document…"
+  opens the Windows share sheet with the actual file; "Copy document" puts the
+  file itself on the clipboard for pasting into mail or chat
 - **Relative images resolve** — served through a virtual host, not `file://`
 - **Relative links open the real file** — click `docs/architecture.md` in a
   README and it opens in that type's default app (inert document types only)

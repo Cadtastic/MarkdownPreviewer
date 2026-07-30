@@ -231,6 +231,51 @@ c = render('# Target\n\n[jump](#target)\n');
 c.querySelector('a[href="#target"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 ok('in-page anchor NOT sent to the host', !posted.some(m => m.kind === 'openExternal'));
 
+console.log('\n== document link handling ==');
+c = render('[sibling](docs/guide.md)\n');
+const docAnchor = c.querySelector('a');
+ok('relative link rewritten to the doc host',
+   docAnchor?.getAttribute('href') === 'https://doc.mdpreview.invalid/notes/docs/guide.md',
+   `got ${docAnchor?.getAttribute('href')}`);
+ok('marked as a document link', docAnchor?.getAttribute('data-mdp-doclink') === '1');
+ok('not marked external', docAnchor?.getAttribute('data-mdp-external') !== '1');
+
+posted.length = 0;
+docAnchor.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+ok('click routed to the host as openDocument',
+   posted.some(m => m.kind === 'openDocument' && m.url === 'https://doc.mdpreview.invalid/notes/docs/guide.md'),
+   JSON.stringify(posted));
+ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExternal'));
+
+console.log('\n== floating table of contents ==');
+const tocEl = window.document.getElementById('toc');
+c = render('# One\n\n## Two\n\n## Three\n');
+ok('TOC visible for a document with headings', tocEl.hidden === false);
+ok('TOC lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
+   `got ${window.document.querySelectorAll('#toc-list a').length}`);
+ok('TOC entries link to the heading anchors',
+   window.document.querySelector('#toc-list a')?.getAttribute('href') === '#one');
+
+c = render('plain text, no headings\n');
+ok('TOC hidden for a document without headings', tocEl.hidden === true);
+
+c = render('# One\n\n## Two\n');
+ok('TOC returns for the next heading-ful document', tocEl.hidden === false);
+
+// Collapse: shrinks to the "Contents" pill; independent of visibility; persists.
+window.document.getElementById('toc-header').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('header click collapses', tocEl.classList.contains('mdp-collapsed'));
+ok('collapse persisted', window.localStorage.getItem('mdp.tocCollapsed') === '1');
+window.document.getElementById('toc-collapse').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('chevron click expands again', !tocEl.classList.contains('mdp-collapsed'));
+
+// Hide via the x button; reshow via the host's context-menu message.
+window.document.getElementById('toc-hide').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('x button hides the panel', tocEl.hidden === true);
+ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
+listeners[0]({ data: { kind: 'toc' } });
+ok('host toc message shows it again', tocEl.hidden === false);
+
 console.log('\n== render completion reporting ==');
 c = render('# done\n');
 await new Promise(r => setTimeout(r, 60));

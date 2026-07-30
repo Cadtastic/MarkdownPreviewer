@@ -46,7 +46,8 @@
     settings: defaultSettings(),
     md: null,
     mdSignature: null,
-    tocVisible: true
+    tocVisible: true,
+    tocCollapsed: false
   };
 
   var assetLoads = Object.create(null);   // href -> Promise
@@ -449,6 +450,34 @@
     catch (_) { /* storage unavailable; the choice just will not persist */ }
   }
 
+  function readTocCollapsedPreference() {
+    try { return window.localStorage.getItem('mdp.tocCollapsed') === '1'; }
+    catch (_) { return false; }
+  }
+
+  function storeTocCollapsedPreference(collapsed) {
+    try { window.localStorage.setItem('mdp.tocCollapsed', collapsed ? '1' : '0'); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  /*
+   * Collapse is independent of visibility: × removes the panel (context menu
+   * brings it back), the chevron shrinks it to a "Contents" pill so it stops
+   * covering the document without losing its spot.
+   */
+  function setTocCollapsed(collapsed) {
+    state.tocCollapsed = collapsed === true;
+    storeTocCollapsedPreference(state.tocCollapsed);
+    toc.classList.toggle('mdp-collapsed', state.tocCollapsed);
+
+    var chevron = document.getElementById('toc-collapse');
+    if (chevron) {
+      chevron.textContent = state.tocCollapsed ? '▸' : '▾';
+      chevron.title = state.tocCollapsed ? 'Expand' : 'Collapse';
+      chevron.setAttribute('aria-expanded', state.tocCollapsed ? 'false' : 'true');
+    }
+  }
+
   /*
    * Rebuilt per render from the headings markdown-it-anchor gave ids to.
    * Documents with fewer than two headings get no TOC regardless of the
@@ -772,8 +801,22 @@
   if (h) { h.addEventListener('message', onHostMessage); }
 
   state.tocVisible = readTocPreference();
+  setTocCollapsed(readTocCollapsedPreference());
+
   var tocHide = document.getElementById('toc-hide');
-  if (tocHide) { tocHide.addEventListener('click', function () { setTocVisible(false); }); }
+  if (tocHide) {
+    tocHide.addEventListener('click', function (event) {
+      event.stopPropagation();               // the header click would re-toggle collapse
+      setTocVisible(false);
+    });
+  }
+
+  // The whole header is the collapse/expand affordance, not just the chevron —
+  // a 12px triangle is a mean click target.
+  var tocHeader = document.getElementById('toc-header');
+  if (tocHeader) {
+    tocHeader.addEventListener('click', function () { setTocCollapsed(!state.tocCollapsed); });
+  }
 
   applyTheme('light');
   post({ kind: 'ready', version: VERSION });

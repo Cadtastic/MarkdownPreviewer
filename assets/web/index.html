@@ -47,11 +47,14 @@
 <body>
   <div id="notice" class="notice" role="status" hidden></div>
 
-  <!-- Floating table of contents; populated per render, toggled from the ×
-       button or the host's context-menu entry. Hidden entirely for documents
-       with fewer than two headings. -->
+  <!-- Floating table of contents; populated per render. The chevron (or the
+       header itself) collapses it to a pill, the × hides it entirely, and the
+       host's context-menu entry brings it back. Hidden for documents with
+       fewer than two headings. -->
   <aside id="toc" class="mdp-toc" hidden>
-    <div class="mdp-toc-header">
+    <div id="toc-header" class="mdp-toc-header">
+      <button id="toc-collapse" class="mdp-toc-collapse" type="button"
+              title="Collapse" aria-expanded="true">▾</button>
       <span class="mdp-toc-title">Contents</span>
       <button id="toc-hide" class="mdp-toc-hide" type="button" title="Hide (right-click the page to show again)">×</button>
     </div>

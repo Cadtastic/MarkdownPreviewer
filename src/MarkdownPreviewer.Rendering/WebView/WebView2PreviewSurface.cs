@@ -694,21 +694,24 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     }
 
     /// <summary>
+    /// Entries a read-only preview must not offer, wherever the browser nests
+    /// them. "share" is stripped because the built-in flavour shares the page
+    /// URL — a process-local virtual host that is meaningless off this machine;
+    /// our own "Share document…" shares the file instead.
+    /// </summary>
+    private static readonly HashSet<string> StrippedMenuItems = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "back", "forward", "reload", "share", "webSelect", "saveAs", "saveImageAs",
+        "print", "webCapture", "emoji", "inspectElement", "viewSource",
+    };
+
+    /// <summary>
     /// Strips menu entries that make no sense for a read-only preview, and adds
-    /// the table-of-contents toggle.
+    /// the document actions and the table-of-contents toggle.
     /// </summary>
     private void OnContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
     {
-        for (int i = e.MenuItems.Count - 1; i >= 0; i--)
-        {
-            string name = e.MenuItems[i].Name;
-            if (name is "back" or "forward" or "reload" or "share" or "webSelect" or
-                        "saveAs" or "saveImageAs" or "print" or "webCapture" or
-                        "emoji" or "inspectElement" or "viewSource")
-            {
-                e.MenuItems.RemoveAt(i);
-            }
-        }
+        StripUnwantedItems(e.MenuItems);
 
         try
         {
@@ -716,6 +719,27 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
             if (e.MenuItems.Count > 0)
             {
+                e.MenuItems.Add(environment.CreateContextMenuItem(
+                    string.Empty, null, CoreWebView2ContextMenuItemKind.Separator));
+            }
+
+            // Document actions only make sense when the document IS a file —
+            // stream-fed items (zip members, search results) have nothing to
+            // hand to another app.
+            string? documentPath = _lastRequest?.Document.Location.FullPath;
+            if (documentPath is not null && File.Exists(documentPath))
+            {
+                CoreWebView2ContextMenuItem copy = environment.CreateContextMenuItem(
+                    "Copy document", null, CoreWebView2ContextMenuItemKind.Command);
+                copy.CustomItemSelected += (_, _) => CopyDocumentToClipboard(documentPath);
+                e.MenuItems.Add(copy);
+
+                CoreWebView2ContextMenuItem share = environment.CreateContextMenuItem(
+                    "Share document…", null, CoreWebView2ContextMenuItemKind.Command);
+                share.CustomItemSelected += (_, _) =>
+                    Interop.WindowsShare.ShowForFile(_host.Handle, documentPath, _log);
+                e.MenuItems.Add(share);
+
                 e.MenuItems.Add(environment.CreateContextMenuItem(
                     string.Empty, null, CoreWebView2ContextMenuItemKind.Separator));
             }
@@ -728,7 +752,46 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         catch (Exception ex)
         {
             // A missing menu item must never take the menu (or the preview) down.
-            _log.Debug($"Adding the table-of-contents menu item failed: {ex.Message}");
+            _log.Debug($"Adding custom menu items failed: {ex.Message}");
+        }
+    }
+
+    private static void StripUnwantedItems(IList<CoreWebView2ContextMenuItem> items)
+    {
+        for (int i = items.Count - 1; i >= 0; i--)
+        {
+            CoreWebView2ContextMenuItem item = items[i];
+
+            if (item.Kind == CoreWebView2ContextMenuItemKind.Submenu)
+            {
+                // "share" lives under "More tools"; a flat scan never sees it.
+                StripUnwantedItems(item.Children);
+                if (item.Children.All(c => c.Kind == CoreWebView2ContextMenuItemKind.Separator))
+                {
+                    items.RemoveAt(i);
+                }
+
+                continue;
+            }
+
+            if (StrippedMenuItems.Contains(item.Name))
+            {
+                items.RemoveAt(i);
+            }
+        }
+    }
+
+    private void CopyDocumentToClipboard(string fullPath)
+    {
+        try
+        {
+            var files = new System.Collections.Specialized.StringCollection { fullPath };
+            Clipboard.SetFileDropList(files);
+            _log.Info($"Copied '{Path.GetFileName(fullPath)}' to the clipboard as a file.");
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Copying the document to the clipboard failed.", ex);
         }
     }
 
