@@ -36,7 +36,8 @@ Unicode True
 !define PRODUCT_SHORTNAME  "MarkdownPreviewer"
 !define PRODUCT_VERSION    "1.0.0"
 !define PRODUCT_PUBLISHER  "Addam Boord"
-!define PRODUCT_URL        "https://github.com/addamboord/MarkdownPreviewer"
+!define PRODUCT_URL        "https://github.com/Cadtastic/MarkdownPreviewer"
+!define README_URL         "${PRODUCT_URL}/blob/main/README.md"
 
 ; Must match [Guid] on MarkdownPreviewHandler and RegistryKeys.PreviewHandlerClsid.
 !define HANDLER_CLSID      "{5B54A6AB-8765-4A71-8732-EA187093A239}"
@@ -78,6 +79,7 @@ ShowUnInstDetails show
 
 Var DotNetFound
 Var WebView2Found
+Var ReadmeOpened
 
 ;--------------------------------
 ; MUI configuration  (all defines BEFORE page insertions)
@@ -104,8 +106,14 @@ Var WebView2Found
 !define MUI_FINISHPAGE_RUN ""
 !define MUI_FINISHPAGE_RUN_TEXT "Restart File Explorer now (required)"
 !define MUI_FINISHPAGE_RUN_FUNCTION "RestartExplorer"
-!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.md"
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "Open the README"
+; The README opens on GitHub, not from the install folder, and through a custom
+; function: MUI2 runs the finish page's Run action BEFORE its ShowReadme action,
+; and the browser must be launched before Explorer is killed and relaunched. So
+; RestartExplorer opens the README itself (when the box is ticked) and OpenReadme
+; only fires for the readme-without-restart combination.
+!define MUI_FINISHPAGE_SHOWREADME "${README_URL}"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Open the README (on GitHub)"
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION "OpenReadme"
 !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 !define MUI_FINISHPAGE_LINK "Project home"
 !define MUI_FINISHPAGE_LINK_LOCATION "${PRODUCT_URL}"
@@ -154,13 +162,54 @@ VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion"     "${PRODUCT_VERSION}"
 ; has a ProgID (its default value, e.g. "md_auto_file" once a user picks a
 ; default app) and that ProgID carries its own preview-handler entry, the ProgID
 ; entry wins and the extension-level one is never consulted. So register at both.
+;
+; If another preview handler already owns the extension (at either level), the
+; user is asked before it is replaced — silently stealing an association the
+; user may have chosen on purpose would be rude. Declining leaves that
+; extension entirely alone. Silent installs (/S) replace, matching the old
+; behaviour.
+;
+; Registers: $R0 existing handler CLSID, $R1 its friendly name, $R2 the
+; extension's ProgID, $R3 replace/keep verdict.
 !macro RegisterPreviewExtension Extension
-  DetailPrint "Associating ${Extension} with the Markdown preview handler..."
-  WriteRegStr HKLM "SOFTWARE\Classes\${Extension}\shellex\${SHELLEX_PREVIEW}" "" "${HANDLER_CLSID}"
-  ReadRegStr $0 HKLM "SOFTWARE\Classes\${Extension}" ""
-  ${If} $0 != ""
-    DetailPrint "  ...and its ProgID ($0), which the shell resolves first."
-    WriteRegStr HKLM "SOFTWARE\Classes\$0\shellex\${SHELLEX_PREVIEW}" "" "${HANDLER_CLSID}"
+  ; What would the shell use today? Mirror its resolution order: ProgID first.
+  StrCpy $R0 ""
+  ReadRegStr $R2 HKLM "SOFTWARE\Classes\${Extension}" ""
+  ${If} $R2 != ""
+    ReadRegStr $R0 HKLM "SOFTWARE\Classes\$R2\shellex\${SHELLEX_PREVIEW}" ""
+  ${EndIf}
+  ${If} $R0 == ""
+    ReadRegStr $R0 HKLM "SOFTWARE\Classes\${Extension}\shellex\${SHELLEX_PREVIEW}" ""
+  ${EndIf}
+
+  StrCpy $R3 "replace"
+  ${If} $R0 != ""
+  ${AndIf} $R0 != "${HANDLER_CLSID}"
+    ; Name the incumbent: the shell's enumeration list first, then the CLSID's
+    ; display name, then the raw CLSID so the prompt is never blank.
+    ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\PreviewHandlers" $R0
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "SOFTWARE\Classes\CLSID\$R0" ""
+    ${EndIf}
+    ${If} $R1 == ""
+      StrCpy $R1 "an unidentified handler ($R0)"
+    ${EndIf}
+
+    MessageBox MB_YESNO|MB_ICONQUESTION \
+      "${Extension} files already have a preview handler:$\r$\n$\r$\n    $R1$\r$\n$\r$\nReplace it with ${PRODUCT_NAME}?$\r$\n$\r$\nChoosing No leaves ${Extension} previews unchanged." \
+      /SD IDYES IDYES +2
+      StrCpy $R3 "keep"
+  ${EndIf}
+
+  ${If} $R3 == "replace"
+    DetailPrint "Associating ${Extension} with the Markdown preview handler..."
+    WriteRegStr HKLM "SOFTWARE\Classes\${Extension}\shellex\${SHELLEX_PREVIEW}" "" "${HANDLER_CLSID}"
+    ${If} $R2 != ""
+      DetailPrint "  ...and its ProgID ($R2), which the shell resolves first."
+      WriteRegStr HKLM "SOFTWARE\Classes\$R2\shellex\${SHELLEX_PREVIEW}" "" "${HANDLER_CLSID}"
+    ${EndIf}
+  ${Else}
+    DetailPrint "Keeping $R1 as the preview handler for ${Extension}."
   ${EndIf}
 !macroend
 
@@ -459,8 +508,25 @@ Function SeedDefaultSettings
   !insertmacro SeedDword "FontScalePercent"  100
 FunctionEnd
 
+; ── Open the README on GitHub (finish page action) ──────────────────────────
+Function OpenReadme
+  ; RestartExplorer may already have opened it — see the finish-page defines.
+  ${If} $ReadmeOpened != 1
+    ExecShell "open" "${README_URL}"
+  ${EndIf}
+FunctionEnd
+
 ; ── Restart Explorer (finish page action) ────────────────────────────────────
 Function RestartExplorer
+  ; If the README box is also ticked, open it first: MUI2 would otherwise run
+  ; this function, kill Explorer, and only then try to open the README while
+  ; the shell is mid-relaunch.
+  ${NSD_GetState} $mui.FinishPage.ShowReadme $0
+  ${If} $0 = ${BST_CHECKED}
+    ExecShell "open" "${README_URL}"
+    StrCpy $ReadmeOpened 1
+  ${EndIf}
+
   DetailPrint "Restarting File Explorer..."
   nsExec::ExecToLog 'taskkill.exe /F /IM prevhost.exe'
   Pop $0
