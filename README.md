@@ -27,6 +27,8 @@ does, but integrated where you already are.
 - **Mermaid diagrams** — ` ```mermaid ` fences render as real diagrams
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
 - **Light/dark theming** — follows the Windows app colour mode, or pin one
+- **Find in page** — `Ctrl+F` searches the rendered document, highlights every
+  match, and cycles with `Enter` / `Shift+Enter` (or `F3`); `Esc` closes
 - **Floating table of contents** — collapse it to a pill with its chevron,
   hide it with its × button, bring it back from the right-click menu
 - **Share the document, not a dead link** — right-click → "Share document…"

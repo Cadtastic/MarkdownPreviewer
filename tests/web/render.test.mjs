@@ -276,6 +276,89 @@ ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
 listeners[0]({ data: { kind: 'toc' } });
 ok('host toc message shows it again', tocEl.hidden === false);
 
+console.log('\n== find in page ==');
+const findBar = window.document.getElementById('find');
+const findInput = window.document.getElementById('find-input');
+const findCount = window.document.getElementById('find-count');
+const ctrlF = () => window.document.dispatchEvent(
+  new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
+
+c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
+ok('find bar hidden until asked for', findBar.hidden === true);
+
+ctrlF();
+ok('Ctrl+F opens the find bar', findBar.hidden === false);
+
+// runFind is debounced behind the input event; call the same path directly by
+// typing and firing input, then waiting past the debounce.
+findInput.value = 'widget';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+await new Promise(r => setTimeout(r, 200));
+
+// Four matches: the heading, then the three in the paragraph.
+let marks = c.querySelectorAll('mark.mdp-find');
+ok('all case-insensitive matches highlighted', marks.length === 4, `got ${marks.length}`);
+ok('first match is current', marks[0].classList.contains('mdp-find-current'));
+ok('counter reads 1/4', findCount.textContent === '1/4', `got ${findCount.textContent}`);
+ok('highlight preserves the original casing', marks[3].textContent === 'WIDGET',
+   `got ${JSON.stringify(marks[3].textContent)}`);
+ok('match inside a heading is found too', marks[0].closest('h1') !== null);
+ok('document text is unchanged by highlighting',
+   c.textContent.includes('The widget counts widgets. A WIDGET is not a gadget.'));
+
+// Enter cycles forward, Shift+Enter back, both wrapping.
+const enter = (shift) => findInput.dispatchEvent(new window.KeyboardEvent('keydown',
+  { key: 'Enter', shiftKey: shift, bubbles: true, cancelable: true }));
+enter(false);
+ok('Enter advances to match 2', findCount.textContent === '2/4', `got ${findCount.textContent}`);
+enter(false); enter(false); enter(false);
+ok('Enter wraps past the last match', findCount.textContent === '1/4', `got ${findCount.textContent}`);
+enter(true);
+ok('Shift+Enter wraps backwards', findCount.textContent === '4/4', `got ${findCount.textContent}`);
+ok('exactly one current match at a time',
+   c.querySelectorAll('mark.mdp-find-current').length === 1);
+
+findInput.value = 'nothingmatchesthis';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+await new Promise(r => setTimeout(r, 200));
+ok('no matches reports 0/0', findCount.textContent === '0/0', `got ${findCount.textContent}`);
+ok('no stray marks left behind', c.querySelectorAll('mark.mdp-find').length === 0);
+
+// Esc closes and removes every highlight, leaving the document text intact.
+findInput.value = 'widget';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+await new Promise(r => setTimeout(r, 200));
+ok('re-search finds matches again', c.querySelectorAll('mark.mdp-find').length === 4);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown',
+  { key: 'Escape', bubbles: true, cancelable: true }));
+ok('Esc hides the find bar', findBar.hidden === true);
+ok('Esc clears every highlight', c.querySelectorAll('mark.mdp-find').length === 0);
+ok('text survives highlight removal intact',
+   c.textContent.includes('The widget counts widgets. A WIDGET is not a gadget.'));
+
+// Rendered diagrams inject <style> blocks whose selectors mention the diagram
+// engine; those text nodes are invisible and must not pollute the match count.
+c = render('# Diagram\n\nThe mermaid diagram below.\n');
+c.insertAdjacentHTML('beforeend',
+  '<div class="mermaid-block"><svg><style>#mermaid-1 .node{fill:#fff}' +
+  '#mermaid-1 .edge{stroke:#000}</style><text>mermaid label</text></svg></div>');
+listeners[0]({ data: { kind: 'find' } });
+findInput.value = 'mermaid';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+await new Promise(r => setTimeout(r, 200));
+ok('style/svg internals excluded from matches', findCount.textContent === '1/1',
+   `got ${findCount.textContent} — invisible <style>/<svg> text must not count`);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+// The host's context-menu entry opens (never toggles) the bar.
+c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
+listeners[0]({ data: { kind: 'find' } });
+ok('host find message opens the bar', findBar.hidden === false);
+listeners[0]({ data: { kind: 'find' } });
+ok('a second host find message leaves it open', findBar.hidden === false);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
 console.log('\n== render completion reporting ==');
 c = render('# done\n');
 await new Promise(r => setTimeout(r, 60));

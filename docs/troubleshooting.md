@@ -12,6 +12,23 @@ finding means.
 
 ## The preview pane is empty
 
+## "Markdown preview could not start" — `0x8007139F`
+
+`ERROR_INVALID_STATE` from WebView2 means the cached browser environment
+outlived the browser process behind it: an Evergreen runtime update swapped the
+installation out, or the shared browser process died while no preview was open
+to notice. Before v1.0.1 the cache never re-checked, so every later preview in
+that `prevhost.exe` failed the same way — which is why closing every Explorer
+window (killing the surrogate) fixed it until the next time.
+
+The handler now watches for the browser process exiting, discards the cached
+environment, and retries once with a fresh one. If you still see this, the log
+records which path was taken:
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\MarkdownPreviewer\logs\preview.log" -Tail 40
+```
+
 **Restart Explorer properly.** `prevhost.exe` caches the loaded handler DLL and
 outlives the Explorer window that spawned it, so closing a window is not enough:
 
