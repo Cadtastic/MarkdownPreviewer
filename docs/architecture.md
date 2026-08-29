@@ -176,6 +176,42 @@ The visible consequence is that the pane is briefly empty on the first selection
 after Explorer starts, while the browser process spins up. Subsequent selections
 reuse it.
 
+### The browser environment is cached, but never trusted to stay alive
+
+`CoreWebView2Environment` is created once per process because `prevhost.exe` is
+reused across selections and hosts several handler instances at once. The trap
+is that a cached environment is only as alive as the browser process behind it:
+when that process goes away — a WebView2 runtime update swapping the
+installation, a crash, or the shell reaping it — every subsequent
+`CreateCoreWebView2Controller` fails with `ERROR_INVALID_STATE` (`0x8007139F`),
+and keeps failing for the life of the host because nothing invalidates the
+cache. In the field this looked like "previews die until I close every Explorer
+window", because closing them all is what finally killed the host.
+
+Three things make the cache self-healing, and all three matter:
+
+1. The provider subscribes to `BrowserProcessExited` and discards the cached
+   environment. This event fires even with **no controller open**, which is
+   exactly the window a `ProcessFailed` handler on a live surface cannot see.
+2. Initialisation catches `0x8007139F`, discards, and retries **once** with a
+   fresh environment. One retry, not a loop: if a freshly created environment
+   also fails, something bigger is wrong and the error should surface.
+3. A browser-process failure no longer latches the surface permanently
+   unusable. The dead control is dropped so the next selection rebuilds it.
+
+### Find in page is ours, not the browser's
+
+`AreBrowserAcceleratorKeysEnabled` is off, which disables the browser's own
+find UI along with printing, DevTools and the rest. The DOM still receives the
+keystroke, so `Ctrl+F` is handled in `preview.js`, which also buys a match
+counter and highlight styling that match the document's theme.
+
+The one non-obvious part is the tree walker's filter. A rendered mermaid diagram
+injects a `<style>` block full of `#mermaid-…` selectors and MathJax emits
+similar machinery; without excluding `<style>`, `<script>`, `<svg>` and MathJax
+containers, searching for "mermaid" reported 146 matches on a document that
+visibly contains two.
+
 ### Render ordering by host token
 
 Explorer changes selection faster than a document with a diagram can render. Every
@@ -207,7 +243,8 @@ entry, an empty rectangle. Each of these is turned into something readable:
 | Broken relative image | A dashed placeholder showing the path, not a 0×0 box |
 | Mermaid or MathJax fails | The diagram source as a code block, plus a warning bar |
 | Bad diagram syntax | That diagram falls back to source; the others still render |
-| Browser process crash | "Markdown preview stopped unexpectedly. Select the file again." |
+| Browser process crash | "Markdown preview stopped unexpectedly. Select the file again." — and the next selection genuinely rebuilds it |
+| Stale browser environment | Retried once with a fresh environment before any message is shown |
 | Registry misconfiguration | `Test-MarkdownPreviewHandler.ps1` names the specific key |
 
 `InstallDirectoryAssetCatalog` exists mainly to make one of these loud: inside
@@ -219,19 +256,26 @@ relative asset probing silently resolves somewhere wrong. It resolves from
 
 1. `IPreviewHandler` methods arrive on arbitrary RPC worker threads (managed CCWs
    are apartment-agile — see above). Nothing UI-bound may run there.
-2. The window, the session, and WebView2 live on the handler's `PreviewUiThread` —
-   a dedicated STA thread with a WinForms message loop. COM entry points marshal
-   onto it: synchronously (`Invoke`) when the caller needs the result or the
-   ordering guarantee, fire-and-forget (`Post`) for renders and other work the
-   shell must not wait on.
-3. Every `await` in the render path uses `ConfigureAwait(true)` so continuations
+2. The window, the session, and WebView2 live on `PreviewUiThread` — a dedicated
+   STA thread with a WinForms message loop. COM entry points marshal onto it:
+   synchronously (`Invoke`) when the caller needs the result or the ordering
+   guarantee, fire-and-forget (`Post`) for renders and other work the shell must
+   not wait on.
+3. That thread is **one per process, not one per handler**. The cached
+   `CoreWebView2Environment` is affine to the thread that created it, and
+   `prevhost.exe` hosts several handler instances over its life; giving each its
+   own thread meant the second handler failed with "CoreWebView2Environment
+   members can only be accessed from the UI thread".
+4. Every `await` in the render path uses `ConfigureAwait(true)` so continuations
    return to that thread's WinForms synchronisation context.
    `ConfigureAwait(false)` anywhere in that chain produces a cross-thread WebView2
    exception.
-4. `PreviewHostWindow` injects `WS_CHILD` and the parent HWND through
-   `CreateParams` *before* the handle exists. Creating a top-level window and
-   reparenting it afterwards works, but flickers and briefly steals activation from
-   the file list.
+5. `PreviewHostWindow` is a `Control`, not a `Form`, and injects `WS_CHILD` and
+   the parent HWND through `CreateParams` *before* the handle exists. A `Form`
+   with `WS_CHILD` grafted on looks equivalent and is not: its top-level
+   visibility machinery never applies `WS_VISIBLE` and it offsets bounds by
+   non-client margins it does not have, which renders perfectly into a window
+   nobody ever sees.
 
 ## Things deliberately not done
 

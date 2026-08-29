@@ -34,7 +34,8 @@ does, but integrated where you already are.
 - **Share the document, not a dead link** — right-click → "Share document…"
   opens the Windows share sheet with the actual file; "Copy document" puts the
   file itself on the clipboard for pasting into mail or chat
-- **Relative images resolve** — served through a virtual host, not `file://`
+- **Relative images resolve** — served from the document's own folder over a
+  virtual host, never `file://`
 - **Relative links open the real file** — click `docs/architecture.md` in a
   README and it opens in that type's default app (inert document types only)
 - **Fast where it counts** — Mermaid (3.5 MB) and MathJax (2.1 MB) are injected
@@ -57,7 +58,7 @@ as literal text.
 | Renderer | markdown-it in WebView2 (client-side) | Markdig → static HTML |
 | Mermaid diagrams | Yes, lazy-loaded | No |
 | LaTeX math | Yes, MathJax SVG, lazy-loaded | No |
-| Relative images | Yes, via a virtual host mapping | Limited |
+| Relative images | Yes, served from the document's folder | Limited |
 | Raw HTML | On by default, always sanitised | Off |
 | Install footprint | ~7 MB plus the WebView2 runtime | Part of PowerToys |
 
@@ -75,7 +76,8 @@ as literal text.
 
 Download the setup executable from
 [Releases](https://github.com/Cadtastic/MarkdownPreviewer/releases) (or build it
-yourself — see below), run it, and restart Explorer when prompted.
+yourself — see below), run it, and restart Explorer when prompted. What changed
+in each release is in [CHANGELOG.md](CHANGELOG.md).
 
 Then in Explorer: **View → Show → Preview pane** (or `Alt+P`) and select a `.md`
 file.
@@ -127,7 +129,7 @@ the behaviour lives:
 ```powershell
 cd tests\web
 npm install
-npm test          # 88 assertions, no browser required
+npm test          # 125 assertions, no browser required
 ```
 
 When you do need to test in Explorer, `scripts\Restart-Explorer.ps1` clears the

@@ -12,23 +12,6 @@ finding means.
 
 ## The preview pane is empty
 
-## "Markdown preview could not start" — `0x8007139F`
-
-`ERROR_INVALID_STATE` from WebView2 means the cached browser environment
-outlived the browser process behind it: an Evergreen runtime update swapped the
-installation out, or the shared browser process died while no preview was open
-to notice. Before v1.0.1 the cache never re-checked, so every later preview in
-that `prevhost.exe` failed the same way — which is why closing every Explorer
-window (killing the surrogate) fixed it until the next time.
-
-The handler now watches for the browser process exiting, discards the cached
-environment, and retries once with a fresh one. If you still see this, the log
-records which path was taken:
-
-```powershell
-Get-Content "$env:LOCALAPPDATA\MarkdownPreviewer\logs\preview.log" -Tail 40
-```
-
 **Restart Explorer properly.** `prevhost.exe` caches the loaded handler DLL and
 outlives the Explorer window that spawned it, so closing a window is not enough:
 
@@ -49,6 +32,33 @@ New-Item 'HKCU:\SOFTWARE\MarkdownPreviewer' -Force | Out-Null
 Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name LogLevel -Value 0 -Type DWord
 # restart Explorer, select a .md file, then:
 Get-Content "$env:LOCALAPPDATA\MarkdownPreviewer\logs\preview.log" -Tail 40 -Wait
+```
+
+## "Markdown preview could not start" — with an HRESULT
+
+The pane shows the message and a code. The two seen in the field:
+
+**`0x8007139F` — "The group or resource is not in the correct state".** The
+browser environment was cached for the life of the preview host, but a cached
+environment is only as alive as the browser process behind it. When that process
+went away — a WebView2 runtime update, a crash, or the shell reaping it while no
+preview was open — every later preview in that host failed the same way, which
+is why closing every Explorer window (killing the host) fixed it until the next
+time. Fixed in v1.1.0: the handler watches for the browser exiting, discards the
+cached environment, and retries once with a fresh one.
+
+**`0x800401F0` — "CoInitialize has not been called".** The shell's calls arrive
+on threads that are not an STA and pump no messages, which WebView2 cannot start
+on. Fixed in v1.1.0: the handler owns a dedicated STA thread with a message loop
+and marshals every browser call onto it.
+
+Both are fixed in the current release, so seeing either means an older build is
+still loaded. Confirm which binary is answering — the log records its full path
+at startup — and restart Explorer with the script above, since `prevhost.exe`
+caches the DLL:
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\MarkdownPreviewer\logs\preview.log" -Tail 40
 ```
 
 ## "Registering the preview handler failed (0x80008093)"
@@ -140,17 +150,47 @@ Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name SingleDollarMath -Valu
 
 ## Local images do not appear
 
-Relative images resolve through a virtual host mapped to the document's own folder.
-They will not resolve if:
+Relative images are served by the handler from the document's own folder. They
+will not resolve if:
 
 - The path points **above** the document's folder. Out of scope by design.
 - The document was opened without a path — inside a zip, from a Search result, as
-  a mail attachment. There is no folder to map. The log records
-  `Initialised from a stream; relative images will not resolve.`
-- The case does not match. The virtual host is stricter than NTFS here.
+  a mail attachment. There is no folder to serve from. The log records
+  `Initialised from an item stream (…); relative images will not resolve.`
+- The file is genuinely missing or misnamed.
 
 A broken path renders as a dashed placeholder showing the path, so you can see
 which one failed rather than hunting a 0×0 box.
+
+## Badge images (shields.io and similar) do not appear
+
+Remote images are off by default: they are how tracking pixels work, and a
+previewer should not tell a third-party server which files you open. Turn them
+on if you accept that:
+
+```powershell
+Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name AllowRemoteImages -Value 1 -Type DWord
+```
+
+## HTML in the document shows as escaped source
+
+`AllowRawHtml` has been set to `0`. It defaults to `1`, and what renders is
+always the sanitised form — `<script>`, `<iframe>`, `<form>`, event handlers and
+`javascript:`/`file:` URLs are stripped before display:
+
+```powershell
+Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name AllowRawHtml -Value 1 -Type DWord
+```
+
+## The table of contents or find bar is missing
+
+The contents panel is hidden for documents with fewer than two headings, and on
+panes narrower than 640 px where it would cover the document. If you hid it with
+its `×`, right-click the page and choose *Toggle table of contents*; the chevron
+in its header collapses it to a pill instead of hiding it. Both choices persist.
+
+`Ctrl+F` opens the find bar; the right-click menu has *Find…* as well, which is
+the one to try if a host application swallows the keystroke.
 
 ## Large files show a truncation notice
 

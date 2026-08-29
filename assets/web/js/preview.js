@@ -30,7 +30,9 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  // Reported to the host in the "ready" handshake and logged, so a mismatch
+  // between the installed binaries and the render assets is visible.
+  var VERSION = '1.1.0';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
