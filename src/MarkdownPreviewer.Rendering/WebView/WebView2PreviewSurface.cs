@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using MarkdownPreviewer.Application.Abstractions;
@@ -115,25 +116,34 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 return;
             }
 
-            CoreWebView2Environment environment =
-                await WebView2EnvironmentProvider.GetAsync(_log, cancellationToken).ConfigureAwait(true);
-
-            var webView = new WebView2
-            {
-                Dock = DockStyle.Fill,
-                // Painted before the page loads; matching it to the theme avoids a
-                // white flash when the pane is dark.
-                DefaultBackgroundColor = Color.White,
-                AllowExternalDrop = false,
-                TabStop = true,
-            };
-
-            _host.Controls.Add(webView);
-            _webView = webView;
-
             _pageReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            WebView2 webView = NewWebView();
+            try
+            {
+                CoreWebView2Environment environment =
+                    await WebView2EnvironmentProvider.GetAsync(_log, cancellationToken).ConfigureAwait(true);
+                await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            }
+            catch (COMException ex) when ((uint)ex.HResult == 0x8007139F /* ERROR_INVALID_STATE */)
+            {
+                // The cached environment outlived its browser process — an
+                // Evergreen update swapped the runtime, or the shared browser
+                // died while no preview was open to see it go. A fresh
+                // environment resolves the runtime anew; one retry is the fix,
+                // not a loop: if a fresh environment also fails, something
+                // bigger is wrong and the error should surface.
+                _log.Warn("The cached WebView2 environment is stale (0x8007139F); retrying with a fresh one.", ex);
+                WebView2EnvironmentProvider.Discard();
+
+                _host.Controls.Remove(webView);
+                webView.Dispose();
+                webView = NewWebView();
+
+                CoreWebView2Environment fresh =
+                    await WebView2EnvironmentProvider.GetAsync(_log, cancellationToken).ConfigureAwait(true);
+                await webView.EnsureCoreWebView2Async(fresh).ConfigureAwait(true);
+            }
 
             HardenSettings(webView.CoreWebView2);
             WireEvents(webView.CoreWebView2);
@@ -158,6 +168,10 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
             await WaitForPageReadyAsync(cancellationToken).ConfigureAwait(true);
             _initialised = true;
+
+            // If this initialisation is a rebuild after a browser death, a
+            // fallback notice from the failure is still on screen.
+            _fallback?.Hide();
         }
         catch (WebView2RuntimeNotFoundException ex)
         {
@@ -180,6 +194,24 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         {
             _initialising = false;
         }
+    }
+
+    /// <summary>Creates the WebView2 control, parents it, and records it.</summary>
+    private WebView2 NewWebView()
+    {
+        var webView = new WebView2
+        {
+            Dock = DockStyle.Fill,
+            // Painted before the page loads; matching it to the theme avoids a
+            // white flash when the pane is dark.
+            DefaultBackgroundColor = Color.White,
+            AllowExternalDrop = false,
+            TabStop = true,
+        };
+
+        _host.Controls.Add(webView);
+        _webView = webView;
+        return webView;
     }
 
     private async Task WaitForPageReadyAsync(CancellationToken cancellationToken)
@@ -744,6 +776,11 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                     string.Empty, null, CoreWebView2ContextMenuItemKind.Separator));
             }
 
+            CoreWebView2ContextMenuItem findItem = environment.CreateContextMenuItem(
+                "Find…\tCtrl+F", null, CoreWebView2ContextMenuItemKind.Command);
+            findItem.CustomItemSelected += (_, _) => Post(new HostToPageMessage { Kind = "find" });
+            e.MenuItems.Add(findItem);
+
             CoreWebView2ContextMenuItem toggle = environment.CreateContextMenuItem(
                 "Toggle table of contents", null, CoreWebView2ContextMenuItemKind.Command);
             toggle.CustomItemSelected += (_, _) => Post(new HostToPageMessage { Kind = "toc" });
@@ -812,10 +849,34 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
         if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
         {
-            // The whole browser is gone; this surface cannot recover. A new
-            // handler instance will build a fresh one.
+            // The whole browser is gone. The old behaviour latched this surface
+            // unusable, which meant one browser death (an Evergreen update, a
+            // crash) poisoned the pane until the surrogate itself died. Instead:
+            // drop the dead control and the process-wide environment cache, and
+            // let the next render rebuild from scratch.
+            _log.Warn("Discarding the dead browser surface; the next selection rebuilds it.");
+            WebView2EnvironmentProvider.Discard();
+
             _initialised = false;
-            MarkUnusable(
+            _pageReady = null;
+
+            if (_webView is not null)
+            {
+                try
+                {
+                    _host.Controls.Remove(_webView);
+                    _webView.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug($"Disposing the dead WebView2 control failed: {ex.Message}");
+                }
+
+                _webView = null;
+            }
+
+            _fallback ??= CreateFallback();
+            _fallback.Show(
                 "Markdown preview stopped unexpectedly.",
                 "Select the file again to retry.");
         }

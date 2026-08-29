@@ -47,6 +47,18 @@
 <body>
   <div id="notice" class="notice" role="status" hidden></div>
 
+  <!-- Find-in-page bar: Ctrl+F (or the context menu) opens it, Enter/Shift+Enter
+       cycle matches, Esc closes. Implemented in-page because the browser's own
+       find UI is disabled along with the rest of its accelerators. -->
+  <div id="find" class="mdp-find-bar" hidden>
+    <input id="find-input" type="text" placeholder="Find" spellcheck="false"
+           autocomplete="off" aria-label="Find in preview" />
+    <span id="find-count" class="mdp-find-count"></span>
+    <button id="find-prev" class="mdp-find-button" type="button" title="Previous match (Shift+Enter)">▲</button>
+    <button id="find-next" class="mdp-find-button" type="button" title="Next match (Enter)">▼</button>
+    <button id="find-close" class="mdp-find-button" type="button" title="Close (Esc)">×</button>
+  </div>
+
   <!-- Floating table of contents; populated per render. The chevron (or the
        header itself) collapses it to a pill, the × hides it entirely, and the
        host's context-menu entry brings it back. Hidden for documents with

@@ -18,15 +18,18 @@ npm test
 | Markdown, tables, anchors, highlighting | The visible output. Anchor slugs must match GitHub's so hand-written `[](#heading)` links work. |
 | Task lists | Implemented as a DOM pass, including the loose-list case where markdown-it inserts a `<p>`. |
 | Front matter | Rendering it as Markdown turns `---` into an `<hr>` and the first key into an `<h2>`. |
-| Relative image resolution | The `doc.mdpreview.invalid` virtual host mapping is the only reason local screenshots appear. |
+| Relative image resolution | Rewriting to the `doc.mdpreview.invalid` host is the only reason local screenshots appear. |
+| Document link routing | A link to a sibling file must reach the host as `openDocument`, not open a dead virtual-host URL. |
 | Dangerous URL schemes | `javascript:`, `vbscript:`, `file:`, non-image `data:`. |
-| Raw HTML sanitiser | Only runs when the user opts in, which makes it the least-exercised and highest-risk path. |
+| Raw HTML sanitiser | On by default, so it stands between every previewed file and the DOM. |
+| Find in page | Match counting, wrap-around cycling, highlight removal, and the exclusion of invisible `<style>`/`<svg>` text. |
+| Table of contents | Built per render, collapse and hide states, and reshow via the host message. |
 | Host ↔ page protocol | Token echo, completion reporting, external-link routing. |
 | Theme switching | Stylesheets toggle via `media`, not the `disabled` attribute. |
 | Lazy asset loading | Mermaid is 3.5 MB and MathJax 2.1 MB. Loading either unnecessarily is a visible regression. |
 | Graceful degradation | A failed asset load must still complete the render, or the host waits out its 30 s timeout. |
 
-## Two things the tests exist to prevent recurring
+## Three things the tests exist to prevent recurring
 
 **The token echo bug.** The page must reply with the token the *host* sent, not a
 counter of its own. An earlier version kept a page-local sequence; the two
@@ -36,6 +39,11 @@ preview died on the 30-second timeout. `host token N echoed verbatim` guards thi
 **Silent asset hangs.** A `<script>` that fires neither `load` nor `error` used to
 leave the render promise unsettled forever. `loadAsset` is now bounded, and
 `render still reports completion` proves a failed bundle degrades to a warning.
+
+**Counting text nobody can see.** Find walked every text node, including the
+`<style>` block a rendered mermaid diagram injects — so searching for "mermaid"
+reported 146 matches on a document containing two. `style/svg internals excluded
+from matches` guards the filter that fixed it.
 
 ## Known limitations
 

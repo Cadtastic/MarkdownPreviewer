@@ -30,7 +30,9 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  // Reported to the host in the "ready" handshake and logged, so a mismatch
+  // between the installed binaries and the render assets is visible.
+  var VERSION = '1.1.0';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
@@ -510,6 +512,140 @@
     toc.hidden = !(state.tocVisible && tocList.childElementCount >= 2);
   }
 
+  // ------------------------------------------------------------ find in page ---
+
+  /*
+   * In-page find: the browser's own find UI is disabled along with its other
+   * accelerators, and doing it here gives styled matches and a match counter.
+   * Matches are wrapped in <mark> elements per text node (a match spanning two
+   * inline elements is not found — a limitation shared with plenty of in-app
+   * finders and irrelevant for prose search in practice).
+   */
+  var MAX_FIND_MATCHES = 2000;
+
+  var find = {
+    bar: document.getElementById('find'),
+    input: document.getElementById('find-input'),
+    count: document.getElementById('find-count'),
+    marks: [],
+    index: -1,
+    timer: 0
+  };
+
+  function openFind() {
+    find.bar.hidden = false;
+    find.input.focus();
+    find.input.select();
+    if (find.input.value) { runFind(find.input.value); }
+  }
+
+  function closeFind() {
+    find.bar.hidden = true;
+    clearFindMarks();
+    find.count.textContent = '';
+  }
+
+  function clearFindMarks() {
+    for (var i = 0; i < find.marks.length; i++) {
+      var mark = find.marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();   // merge the split text nodes back together
+    }
+
+    find.marks = [];
+    find.index = -1;
+  }
+
+  function runFind(query) {
+    clearFindMarks();
+
+    query = String(query || '');
+    if (query.length === 0) {
+      find.count.textContent = '';
+      return;
+    }
+
+    var needle = query.toLowerCase();
+
+    // Snapshot first: wrapping matches mutates the tree under the walker.
+    //
+    // The filter is not optional. A rendered mermaid diagram injects a <style>
+    // block full of "#mermaid-…" selectors, and MathJax emits similar
+    // machinery; counting those invisible text nodes made a search for
+    // "mermaid" report 146 matches on a document that visibly contains four.
+    var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        if (!node.nodeValue || node.nodeValue.length === 0) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        for (var el = node.parentNode; el && el !== content; el = el.parentNode) {
+          var name = el.nodeName.toUpperCase();
+          if (name === 'STYLE' || name === 'SCRIPT' || name === 'SVG' ||
+              name === 'MJX-CONTAINER' || name === 'TITLE') {
+            return NodeFilter.FILTER_REJECT;
+          }
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    var textNodes = [];
+    while (walker.nextNode()) { textNodes.push(walker.currentNode); }
+
+    for (var n = 0; n < textNodes.length && find.marks.length < MAX_FIND_MATCHES; n++) {
+      var node = textNodes[n];
+      var haystack = node.textContent.toLowerCase();
+      var from = 0;
+      var at;
+
+      while ((at = haystack.indexOf(needle, from)) >= 0 &&
+             find.marks.length < MAX_FIND_MATCHES) {
+        var matchNode = node.splitText(at);
+        node = matchNode.splitText(query.length);
+
+        var mark = document.createElement('mark');
+        mark.className = 'mdp-find';
+        matchNode.parentNode.replaceChild(mark, matchNode);
+        mark.appendChild(matchNode);
+
+        find.marks.push(mark);
+        haystack = node.textContent.toLowerCase();
+        from = 0;
+      }
+    }
+
+    if (find.marks.length > 0) {
+      setCurrentMatch(0);
+    } else {
+      find.count.textContent = '0/0';
+    }
+  }
+
+  function setCurrentMatch(index) {
+    if (find.marks.length === 0) { return; }
+
+    if (find.index >= 0 && find.marks[find.index]) {
+      find.marks[find.index].classList.remove('mdp-find-current');
+    }
+
+    find.index = ((index % find.marks.length) + find.marks.length) % find.marks.length;
+    var current = find.marks[find.index];
+    current.classList.add('mdp-find-current');
+
+    // A match inside collapsed front matter is invisible; open it first.
+    var details = current.closest && current.closest('details');
+    if (details && !details.open) { details.open = true; }
+
+    try { current.scrollIntoView({ block: 'center' }); } catch (_) { /* jsdom */ }
+
+    var suffix = find.marks.length >= MAX_FIND_MATCHES ? '+' : '';
+    find.count.textContent = (find.index + 1) + '/' + find.marks.length + suffix;
+  }
+
   // ----------------------------------------------------------------- mermaid ---
 
   function mermaidTheme() {
@@ -679,6 +815,12 @@
     try { buildToc(); }
     catch (error) { warnings.push('Contents: ' + error.message); }
 
+    // The old document's marks died with its innerHTML; re-run against the new
+    // one so an open find bar keeps working across selections.
+    find.marks = [];
+    find.index = -1;
+    if (!find.bar.hidden && find.input.value) { runFind(find.input.value); }
+
     // Explorer reuses the same page for the next selection; without this the new
     // document opens scrolled to wherever the previous one was.
     window.scrollTo(0, 0);
@@ -747,6 +889,14 @@
         setTocVisible(!state.tocVisible);
         break;
 
+      case 'find':
+        // From the host's context-menu entry. Deliberately open-not-toggle: the
+        // page's own Ctrl+F handler may also fire for the same gesture, and two
+        // "open" calls are harmless where two toggles would cancel out. Esc and
+        // the × close it.
+        openFind();
+        break;
+
       default:
         break;
     }
@@ -799,6 +949,60 @@
 
   var h = host();
   if (h) { h.addEventListener('message', onHostMessage); }
+
+  // --- find in page ---------------------------------------------------------
+
+  document.addEventListener('keydown', function (event) {
+    if ((event.ctrlKey || event.metaKey) && (event.key === 'f' || event.key === 'F')) {
+      event.preventDefault();
+      openFind();
+      return;
+    }
+
+    if (event.key === 'Escape' && !find.bar.hidden) {
+      event.preventDefault();
+      closeFind();
+      return;
+    }
+
+    // F3 / Shift+F3 cycle matches from anywhere, as they do in a browser.
+    if (event.key === 'F3' && find.marks.length > 0) {
+      event.preventDefault();
+      setCurrentMatch(find.index + (event.shiftKey ? -1 : 1));
+    }
+  });
+
+  find.input.addEventListener('input', function () {
+    // Debounced: retyping a query on a long document would otherwise re-walk
+    // the whole tree per keystroke.
+    window.clearTimeout(find.timer);
+    var value = find.input.value;
+    find.timer = window.setTimeout(function () { runFind(value); }, 120);
+  });
+
+  find.input.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter') { return; }
+    event.preventDefault();
+
+    // Enter before the debounce fires: search now rather than doing nothing.
+    if (find.marks.length === 0) {
+      window.clearTimeout(find.timer);
+      runFind(find.input.value);
+      return;
+    }
+
+    setCurrentMatch(find.index + (event.shiftKey ? -1 : 1));
+  });
+
+  document.getElementById('find-next').addEventListener('click', function () {
+    setCurrentMatch(find.index + 1);
+  });
+  document.getElementById('find-prev').addEventListener('click', function () {
+    setCurrentMatch(find.index - 1);
+  });
+  document.getElementById('find-close').addEventListener('click', closeFind);
+
+  // --- table of contents ----------------------------------------------------
 
   state.tocVisible = readTocPreference();
   setTocCollapsed(readTocCollapsedPreference());

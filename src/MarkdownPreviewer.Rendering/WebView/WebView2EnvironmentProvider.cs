@@ -25,6 +25,23 @@ internal static class WebView2EnvironmentProvider
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static CoreWebView2Environment? _environment;
 
+    /// <summary>
+    /// Forgets the cached environment so the next preview builds a fresh one.
+    /// </summary>
+    /// <remarks>
+    /// A cached environment is only as alive as the browser process behind it.
+    /// When that process goes away — an Evergreen runtime update swapping the
+    /// installation out from under us, a crash, the shell reaping it — creating
+    /// a controller from the stale environment fails with
+    /// <c>ERROR_INVALID_STATE</c> (0x8007139F), and it keeps failing for the
+    /// life of the surrogate because the cache never noticed. Discarding is
+    /// cheap; the next <see cref="GetAsync"/> re-resolves the current runtime.
+    /// </remarks>
+    public static void Discard()
+    {
+        _environment = null;
+    }
+
     public static async Task<CoreWebView2Environment> GetAsync(IDiagnosticLog log, CancellationToken cancellationToken)
     {
         if (_environment is not null)
@@ -61,12 +78,26 @@ internal static class WebView2EnvironmentProvider
 
             log.Info($"Creating the WebView2 environment (user data folder: {userDataFolder}).");
 
-            _environment = await CoreWebView2Environment
+            CoreWebView2Environment created = await CoreWebView2Environment
                 .CreateAsync(browserExecutableFolder: null, userDataFolder: userDataFolder, options: options)
                 .ConfigureAwait(true);
 
-            log.Info($"WebView2 runtime version {_environment.BrowserVersionString}.");
-            return _environment;
+            // Raised even when no controller is open, which is exactly the
+            // window in which a browser death would otherwise go unnoticed and
+            // poison every later preview in this process.
+            created.BrowserProcessExited += (_, e) =>
+            {
+                log.Warn($"The WebView2 browser process exited ({e.BrowserProcessExitKind}); " +
+                         "discarding the cached environment.");
+                if (ReferenceEquals(_environment, created))
+                {
+                    Discard();
+                }
+            };
+
+            _environment = created;
+            log.Info($"WebView2 runtime version {created.BrowserVersionString}.");
+            return created;
         }
         finally
         {

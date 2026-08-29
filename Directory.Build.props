@@ -19,9 +19,11 @@
 
     <Product>Markdown Preview Handler</Product>
     <Company>Addam Boord</Company>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <!-- Keep in step with installer/MarkdownPreviewer.nsi (PRODUCT_VERSION),
+         assets/web/js/preview.js (VERSION) and CHANGELOG.md. -->
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <Copyright>Copyright (c) 2026</Copyright>
   </PropertyGroup>
 

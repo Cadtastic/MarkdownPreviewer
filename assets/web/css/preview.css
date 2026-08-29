@@ -125,6 +125,73 @@ mjx-container[jax="SVG"][display="true"] {
   opacity: 0.7;
 }
 
+/* --- find in page ---------------------------------------------------------- */
+
+.mdp-find-bar {
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  background: var(--mdp-canvas, Canvas);
+  color: var(--mdp-ink, CanvasText);
+  font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.mdp-find-bar input {
+  width: 180px;
+  padding: 3px 6px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+.mdp-find-bar input:focus {
+  border-color: rgba(9, 105, 218, 0.7);
+}
+
+.mdp-find-count {
+  min-width: 44px;
+  text-align: center;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.mdp-find-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.mdp-find-button:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+mark.mdp-find {
+  background: rgba(255, 212, 0, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0;
+}
+mark.mdp-find.mdp-find-current {
+  background: rgba(255, 140, 0, 0.85);
+  color: #1f2328;
+}
+
 /* --- floating table of contents ------------------------------------------ */
 
 .mdp-toc {
