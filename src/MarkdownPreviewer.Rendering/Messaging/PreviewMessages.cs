@@ -27,6 +27,39 @@ internal sealed class HostToPageMessage
     /// <summary>For kind "imageText": the extracted text per image.</summary>
     [JsonPropertyName("images")]
     public ImageTextEntry[]? Images { get; init; }
+
+    /// <summary>
+    /// For kind "render": increments only when the previewed document changes
+    /// identity. A redraw of the same document (theme flip, trust change)
+    /// repeats the previous value, which is how the page tells "the reader
+    /// moved on" from "we drew this again".
+    /// </summary>
+    [JsonPropertyName("documentGeneration")]
+    public long DocumentGeneration { get; init; }
+
+    /// <summary>
+    /// For kind "render": the document's file name, shown in the page's trust
+    /// dialog. A security prompt that cannot name what it is about is not worth
+    /// showing, and the page only knows the document by a virtual host URL.
+    /// </summary>
+    [JsonPropertyName("documentName")]
+    public string? DocumentName { get; init; }
+
+    /// <summary>
+    /// For kind "render": whether the user has trusted this document to load
+    /// resources from the internet.
+    /// </summary>
+    [JsonPropertyName("trusted")]
+    public bool Trusted { get; init; }
+
+    /// <summary>
+    /// For kind "render": whether trust can be granted at all. False for
+    /// stream-fed items, which have no path to record a grant against — the page
+    /// disables its Trust control and says why rather than offering a switch
+    /// that would silently forget.
+    /// </summary>
+    [JsonPropertyName("trustable")]
+    public bool Trustable { get; init; }
 }
 
 /// <summary>
@@ -41,6 +74,16 @@ internal sealed class HostToPageMessage
 internal sealed class PageSettings
 {
     [JsonPropertyName("allowRawHtml")]     public bool AllowRawHtml { get; init; }
+
+    /// <summary>
+    /// The standing preference, which the page needs in order to decide whether
+    /// to emit a remote image URL at all. The host still refuses the request
+    /// independently — that is the security boundary — but a page that knows
+    /// the answer up front never issues a request it expects to be refused, and
+    /// stops showing images the moment permission goes away.
+    /// </summary>
+    [JsonPropertyName("allowRemoteImages")] public bool AllowRemoteImages { get; init; }
+
     [JsonPropertyName("linkify")]          public bool Linkify { get; init; }
     [JsonPropertyName("typographer")]      public bool Typographer { get; init; }
     [JsonPropertyName("highlight")]        public bool Highlight { get; init; }
@@ -69,6 +112,13 @@ internal sealed class PageToHostMessage
 
     /// <summary>For kind "imageTextRequest": the images the page wants text for.</summary>
     [JsonPropertyName("urls")]        public string[]? Urls { get; init; }
+
+    /// <summary>
+    /// For kind "trustDocument": the state the user just chose. The page has
+    /// already shown its confirmation dialog by the time this arrives; the host
+    /// records the grant and re-renders so the newly permitted images load.
+    /// </summary>
+    [JsonPropertyName("trusted")]     public bool Trusted { get; init; }
 }
 
 /// <summary>

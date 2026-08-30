@@ -52,7 +52,8 @@ internal static class PreviewComposition
         var launcher = new ShellExecuteLinkLauncher(log);
         var settings = new RegistryRenderSettingsProvider(log);
         var themes = new ShellAwareThemeProvider(new SystemThemeProvider(log), hostBackgroundColour);
-        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, log);
+        var trust = new RegistryTrustedDocumentStore(log);
+        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, trust, log);
 
         return new PreviewSession(surface, settings, themes, log);
     }

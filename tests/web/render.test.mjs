@@ -82,7 +82,7 @@ console.log('\n== startup handshake ==');
 ok('page posted {kind:"ready"}', posted.some(m => m.kind === 'ready'), JSON.stringify(posted));
 ok('host listener registered', listeners.length === 1);
 
-function render(markdown, settings = {}, theme = 'light') {
+function render(markdown, settings = {}, theme = 'light', envelope = {}) {
   posted.length = 0;
   listeners[0]({
     data: {
@@ -91,6 +91,14 @@ function render(markdown, settings = {}, theme = 'light') {
       markdown,
       theme,
       docBase: 'https://doc.mdpreview.invalid/notes/',
+      // One generation by default, so a bare render() reads as "the same
+      // document again" and does not clear the find bar out from under a test.
+      // Pass a different one through `envelope` to model a new selection.
+      documentGeneration: 1,
+      documentName: 'notes.md',
+      trusted: false,
+      trustable: true,
+      ...envelope,
       settings: {
         allowRawHtml: false, linkify: true, typographer: false, highlight: true,
         mermaid: false, math: false, singleDollarMath: false, taskLists: true,
@@ -154,9 +162,55 @@ ok('parent-relative path resolves within the host',
    c.querySelector('img')?.getAttribute('src') === 'https://doc.mdpreview.invalid/shared/pic.png',
    `got ${c.querySelector('img')?.getAttribute('src')}`);
 
-c = render('![alt](https://cdn.example.com/pic.png)\n');
-ok('absolute https image left intact',
+console.log('\n== remote images follow the permission, not the cache ==');
+// The host refuses these requests too — that is the boundary — but the page
+// withholds the URL so no request is issued at all. Without that, withdrawing
+// trust left already-fetched images on screen: the <img> was recreated with the
+// same src and answered from the browser cache, so the host's gate was never
+// consulted.
+const remoteDoc = '![alt](https://cdn.example.com/pic.png)\n';
+
+c = render(remoteDoc);
+ok('untrusted document emits no remote <img> at all', c.querySelector('img') === null);
+ok('the alt text survives as a placeholder',
+   c.querySelector('span.mdp-broken')?.textContent === 'alt');
+ok('and it reads as blocked, not as broken', !!c.querySelector('span.mdp-blocked'));
+ok('the placeholder says how to undo it',
+   (c.querySelector('span.mdp-blocked')?.getAttribute('title') ?? '').includes('Trust this document'));
+
+c = render(remoteDoc, {}, 'light', { trusted: true });
+ok('a trusted document emits the real src',
    c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/pic.png');
+
+// The regression the user hit: withdrawing has to take effect on this render,
+// not on some later one.
+c = render(remoteDoc, {}, 'light', { trusted: false });
+ok('withdrawing trust drops the image on the very next render',
+   c.querySelector('img') === null && !!c.querySelector('span.mdp-blocked'));
+
+// The standing preference is a separate door to the same room, and the page has
+// to honour it or setting AllowRemoteImages would appear to do nothing.
+c = render(remoteDoc, { allowRemoteImages: true });
+ok('AllowRemoteImages alone is enough, without trusting the document',
+   c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/pic.png');
+
+// A path that cannot be resolved is not the same as one held back, and must not
+// claim the reader can fix it from the toolbar. (markdown-it refuses file: and
+// javascript: itself, before our rule runs — ms-appx: reaches us.)
+c = render('![missing](ms-appx:///images/logo.png)\n');
+ok('an unusable scheme is broken, not blocked',
+   !!c.querySelector('span.mdp-broken') && !c.querySelector('span.mdp-blocked'),
+   c.innerHTML);
+
+// Raw HTML goes through the sanitiser rather than the image rule; it is the
+// same funnel underneath, so it must reach the same answer.
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n', { allowRawHtml: true });
+ok('raw-HTML remote images are stripped too when untrusted',
+   c.querySelector('img')?.hasAttribute('src') !== true);
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n',
+           { allowRawHtml: true }, 'light', { trusted: true });
+ok('and kept when the document is trusted',
+   c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/raw.png');
 
 console.log('\n== SECURITY: dangerous URL schemes ==');
 // markdown-it's own validateLink refuses these outright, so no anchor is emitted
@@ -259,14 +313,17 @@ ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExtern
 
 console.log('\n== contents rail ==');
 const tocEl = window.document.getElementById('toc');
+const findBarEl = window.document.getElementById('toolbar');
 const tocToggle = window.document.getElementById('toc-toggle');
 const openBar = () => window.document.dispatchEvent(
   new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
 
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 c = render('# One\n\n## Two\n\n## Three\n');
-ok('rail stays hidden while the toolbar is hidden', isHidden(tocEl));
+ok('a new document brings the toolbar back after Esc', !isHidden(findBarEl));
+ok('rail comes up with the toolbar on a heading-ful document', !isHidden(tocEl));
 openBar();
-ok('rail appears with the toolbar for a heading-ful document', !isHidden(tocEl));
+ok('Ctrl+F on an open toolbar leaves the rail alone', !isHidden(tocEl));
 ok('rail lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
    `got ${window.document.querySelectorAll('#toc-list a').length}`);
 ok('rail entries link to the heading anchors',
@@ -304,11 +361,10 @@ const ctrlF = () => window.document.dispatchEvent(
   new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
 
 c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
-ok('toolbar hidden until asked for', isHidden(findBar),
-   'the toolbar renders on every document -- see issue #1');
+ok('toolbar visible by default', !isHidden(findBar));
 
 ctrlF();
-ok('Ctrl+F opens the toolbar', !isHidden(findBar));
+ok('Ctrl+F leaves an already-open toolbar open', !isHidden(findBar));
 ok('the document is pushed below the toolbar',
    window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '' &&
    window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '0px');
@@ -688,6 +744,177 @@ ok('document body still rendered', window.document.getElementById('content').chi
 console.log('\n== truncation notice passthrough ==');
 c = render('> **Preview truncated.** Showing the first part of a 12.0 MB file.\n\n# Body\n');
 ok('host-injected notice renders as a blockquote', !!c.querySelector('blockquote strong'));
+
+console.log('\n== the search belongs to the document ==');
+// Explorer reuses one page for every selection, so a query typed against one
+// file used to follow the reader to the next and report a count for a document
+// they had already left.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+ctrlF();
+ok('a query finds its matches', (await search('widget')) === '1/3', findCount.textContent);
+
+// Same document, drawn again — a theme flip or a trust change. The query has to
+// survive, or those controls would wipe out a search in progress.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+await new Promise(r => setTimeout(r, 50));
+ok('a redraw of the same document keeps the query', findInput.value === 'widget');
+ok('and re-runs it against the rebuilt DOM',
+   c.querySelectorAll('mark.mdp-find').length === 3,
+   `${c.querySelectorAll('mark.mdp-find').length} marks`);
+
+// A different file: the query, the count and the colour all belong to the
+// document that is gone.
+c = render('# Gadgets\n\nGadgets only.\n', {}, 'light', { documentGeneration: 2 });
+await new Promise(r => setTimeout(r, 50));
+ok('moving to another document clears the query', findInput.value === '');
+ok('and the match count', findCount.textContent === '');
+ok('and the state colour', !['hit', 'miss', 'invalid']
+   .some(n => findBar.classList.contains(`mdp-find-${n}`)));
+ok('nothing is highlighted in the new document',
+   c.querySelectorAll('mark.mdp-find').length === 0);
+
+// The debounce is the trap: a pending search for the old text must not land in
+// the new document a moment after it was cleared.
+findInput.value = 'gadgets';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+c = render('# Sprockets\n\nSprockets only.\n', {}, 'light', { documentGeneration: 3 });
+await new Promise(r => setTimeout(r, 250));
+ok('a debounced search does not fire into the next document',
+   findInput.value === '' && c.querySelectorAll('mark.mdp-find').length === 0,
+   `value=${JSON.stringify(findInput.value)} marks=${c.querySelectorAll('mark.mdp-find').length}`);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== toolbar: visible by default, dismissed per document ==');
+// The toolbar is the only way to reach search, the contents rail, the theme
+// and the trust control, so closing it is scoped to the document on screen.
+// It must still genuinely close -- that half is issue #1.
+c = render('# Widgets\n\nWidgets everywhere.\n');
+ok('a fresh document shows the toolbar', !isHidden(findBar));
+click('toolbar-close');
+ok('close still hides it', isHidden(findBar));
+c = render('# Gadgets\n\nGadgets now.\n');
+ok('the next document brings it back', !isHidden(findBar));
+ok('closing is NOT remembered as a preference',
+   window.localStorage.getItem('mdp.toolbar') === null);
+
+console.log('\n== toolbar geometry ==');
+// The close button is the last thing in the row, and the group holding it is
+// exactly as wide as the contents rail -- which is what puts the Contents
+// button's left edge on the rail's left edge.
+const toolbarRow = window.document.querySelector('.mdp-toolbar-row');
+ok('close button is the last control in the row',
+   toolbarRow.querySelector('.mdp-toolbar-right').lastElementChild.id === 'toolbar-close');
+ok('Contents button leads the right-hand group',
+   toolbarRow.querySelector('.mdp-toolbar-right').firstElementChild.id === 'toc-toggle');
+// The alignment is only durable if both widths come off the same token, so
+// that is what is asserted -- jsdom does not resolve custom properties, and a
+// resolved pixel figure would not prove they are tied together anyway.
+const railWidth = window.getComputedStyle(tocEl).width;
+const groupWidth = window.getComputedStyle(window.document.querySelector('.mdp-toolbar-right')).width;
+ok('the rail takes its width from the shared token',
+   railWidth === 'var(--mdp-toc-width)', railWidth);
+ok('the right-hand group is that same width less the row padding',
+   groupWidth === 'calc(var(--mdp-toc-width) - var(--mdp-toolbar-pad))', groupWidth);
+
+// Every glyph is a 24px icon in a button that adds no more than 2px around it.
+const icons = [...window.document.querySelectorAll('.mdp-toolbar .mdp-icon')];
+ok('the toolbar is drawn with icons, not glyphs', icons.length >= 5, `${icons.length} icons`);
+ok('every toolbar icon is 24px square',
+   icons.every(i => window.getComputedStyle(i).width === '24px' &&
+                    window.getComputedStyle(i).height === '24px'));
+ok('icon buttons pad by 2px',
+   window.getComputedStyle(window.document.getElementById('find-next')).padding === '2px',
+   window.getComputedStyle(window.document.getElementById('find-next')).padding);
+
+console.log('\n== search field state colours ==');
+// Green with matches, red without, red for a pattern that will not compile,
+// and neutral when there is nothing to say.
+ctrlF();
+const findState = () => ['hit', 'miss', 'invalid']
+  .filter(n => findBar.classList.contains(`mdp-find-${n}`)).join(',') || 'neutral';
+
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+ctrlF();
+await search('widget');
+ok('matches turn the field green', findState() === 'hit', findState());
+await search('nothing-here');
+ok('no matches turn it red', findState() === 'miss', findState());
+await search('');
+ok('an empty query is neutral again', findState() === 'neutral', findState());
+
+setOpt('find-regex', true);
+await search('widget(');
+ok('an uncompilable pattern reads as red, not as a miss',
+   findState() === 'invalid', findState());
+ok('the counter says why', findCount.textContent === 'bad pattern');
+await search('widget');
+ok('a valid pattern goes green', findState() === 'hit', findState());
+setOpt('find-regex', false);
+await search('');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== trust external links ==');
+const trustToggle = window.document.getElementById('trust-toggle');
+const trustDialog = window.document.getElementById('trust-dialog');
+
+c = render('# Remote\n\n![pixel](https://example.invalid/p.png)\n');
+ok('untrusted document reads as not pressed',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+ok('trust dialog closed to begin with', isHidden(trustDialog));
+
+// Granting asks first, and the question must name what it is about.
+click('trust-toggle');
+ok('clicking trust opens the dialog', !isHidden(trustDialog));
+ok('the dialog names the document',
+   window.document.getElementById('trust-dialog-name').textContent === 'notes.md');
+ok('nothing is granted merely by asking',
+   !posted.some(m => m.kind === 'trustDocument'), JSON.stringify(posted));
+ok('the toggle stays off while the dialog is up',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// Cancel is the default action, and Esc chooses it.
+click('trust-cancel');
+ok('cancel closes the dialog', isHidden(trustDialog));
+ok('cancel grants nothing', !posted.some(m => m.kind === 'trustDocument'));
+ok('cancel leaves the toggle off', trustToggle.getAttribute('aria-pressed') === 'false');
+
+click('trust-toggle');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('Esc closes the dialog', isHidden(trustDialog));
+ok('Esc grants nothing', !posted.some(m => m.kind === 'trustDocument'));
+ok('Esc closed the dialog without also closing the toolbar', !isHidden(findBar));
+
+// Confirming is the only path to a grant.
+click('trust-toggle');
+click('trust-confirm');
+ok('confirming closes the dialog', isHidden(trustDialog));
+ok('confirming asks the host to record trust',
+   posted.some(m => m.kind === 'trustDocument' && m.trusted === true), JSON.stringify(posted));
+ok('the toggle reads as pressed', trustToggle.getAttribute('aria-pressed') === 'true');
+
+// Withdrawing a permission is safe, so it does not ask.
+posted.length = 0;
+click('trust-toggle');
+ok('withdrawing skips the dialog', isHidden(trustDialog));
+ok('withdrawing is sent to the host',
+   posted.some(m => m.kind === 'trustDocument' && m.trusted === false), JSON.stringify(posted));
+ok('the toggle reads as unpressed again',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// The host is the authority; the page repaints from what it is told.
+c = render('# Remote\n', {}, 'light', { trusted: true });
+ok('a trusted render lights the toggle up',
+   trustToggle.getAttribute('aria-pressed') === 'true');
+c = render('# Remote\n', {}, 'light', { trusted: false });
+ok('the next document does not inherit the grant',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// An item with no file behind it has nothing to record a grant against.
+c = render('# Streamed\n', {}, 'light', { trustable: false, documentName: '' });
+ok('an unlocatable item cannot be trusted', trustToggle.disabled === true);
+ok('and it says why', trustToggle.title.includes('no file on disk'), trustToggle.title);
+c = render('# Located\n', {}, 'light', { trustable: true });
+ok('a real file can be trusted again', trustToggle.disabled === false);
 
 console.log(`\n${'='.repeat(46)}\n  ${pass} passed, ${fail} failed\n${'='.repeat(46)}`);
 process.exit(fail === 0 ? 0 : 1);

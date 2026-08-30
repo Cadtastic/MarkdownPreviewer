@@ -7,6 +7,18 @@
 :root {
   --mdp-gutter: 24px;
   --mdp-font-scale: 1;
+
+  /* One number for the contents rail's width and for the toolbar group that
+     has to line up with it. They cannot drift apart. */
+  --mdp-toc-width: 220px;
+
+  /* The toolbar row's horizontal padding, subtracted from the right-hand
+     group so that group's left edge lands exactly on the rail's. */
+  --mdp-toolbar-pad: 8px;
+
+  /* What an "off" icon's slash is cut out of. Follows the button's own
+     background so the notch never shows the wrong colour on hover. */
+  --mdp-icon-cut: var(--surface-2);
 }
 
 html, body {
@@ -114,8 +126,14 @@ mjx-container[jax="SVG"][display="true"] {
   height: auto;
 }
 /* A broken relative path is common (moved file, wrong case). Make it visible
-   rather than silently collapsing to a 0x0 box. */
-.markdown-body img.mdp-broken {
+   rather than silently collapsing to a 0x0 box.
+
+   Two elements share the treatment. An <img> whose request failed gets the
+   class from the error handler; a URL the page refused to emit at all never
+   becomes an <img>, so it arrives as a <span> holding the alt text. They are
+   the same thing to a reader and should look the same. */
+.markdown-body img.mdp-broken,
+.markdown-body span.mdp-broken {
   min-width: 120px;
   min-height: 24px;
   padding: 4px 8px;
@@ -123,6 +141,19 @@ mjx-container[jax="SVG"][display="true"] {
   border-radius: 4px;
   font-size: 12px;
   opacity: 0.7;
+}
+.markdown-body span.mdp-broken {
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+/* Held back for want of trust, rather than missing. Worth distinguishing: this
+   one the reader can undo from the toolbar, and the dashed box is the only
+   place that hint can live. */
+.markdown-body span.mdp-blocked {
+  border-color: var(--warn, #9a6700);
+  color: var(--warn, #9a6700);
+  cursor: help;
 }
 
 /* --- toolbar ---------------------------------------------------------------- */
@@ -170,7 +201,24 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 8px;
+  padding: 6px var(--mdp-toolbar-pad);
+}
+
+/*
+ * The contents toggle and the close button, boxed into exactly the rail's
+ * width. Because the group is flush to the row's right padding, its left edge
+ * falls on the rail's left edge — so the Contents button lines up with the
+ * panel it opens — and space-between pushes the close button to the far right
+ * of the bar, where a close button belongs.
+ */
+.mdp-toolbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: calc(var(--mdp-toc-width) - var(--mdp-toolbar-pad));
 }
 
 .mdp-toolbar-row input[type="text"] {
@@ -185,8 +233,14 @@ body {
   font: inherit;
   outline: none;
 }
+/*
+ * Focus alone must stay neutral. The accent is orange in some palettes, and an
+ * orange ring around a search box reads as "something is wrong" to anyone who
+ * has used a form validator — which is exactly the wrong signal for a field the
+ * user just clicked into.
+ */
 .mdp-toolbar-row input[type="text"]:focus {
-  border-color: var(--accent);
+  border-color: var(--muted);
 }
 
 .mdp-find-count {
@@ -198,12 +252,15 @@ body {
 }
 
 .mdp-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 2px;
   border-radius: 5px;
   cursor: pointer;
   opacity: 0.72;
@@ -211,11 +268,30 @@ body {
 .mdp-toolbar-button:hover {
   opacity: 1;
   background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+
+/*
+ * Every toolbar glyph is a 24px stroked icon in a 24px box with 2px of padding
+ * around it, so the buttons are a uniform 28px square and the icons optically
+ * match each other rather than the font they used to be drawn in.
+ */
+.mdp-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .mdp-toolbar-button.mdp-active {
   opacity: 1;
   background: var(--accent-soft);
   color: var(--accent);
+  --mdp-icon-cut: var(--accent-soft);
 }
 .mdp-toolbar-button:disabled {
   opacity: 0.35;
@@ -224,13 +300,9 @@ body {
   color: inherit;
 }
 
-/* The close button is what people reach for in a hurry; keep it the largest
-   control in the row. */
-.mdp-close-button {
-  font-size: 17px;
-  padding: 2px 9px;
-  opacity: 0.8;
-}
+/* The close button is what people reach for in a hurry; keep it the most
+   legible control in the row. */
+.mdp-close-button { opacity: 0.85; }
 .mdp-close-button:hover { opacity: 1; }
 
 .mdp-toolbar-divider {
@@ -242,8 +314,21 @@ body {
 
 .mdp-toolbar-spacer { flex: 1 1 auto; }
 
-.mdp-toc-toggle { white-space: nowrap; }
-.mdp-toc-chevron { font-size: 10px; opacity: 0.8; }
+/* Text plus chevron, so it needs padding on the text side; the icon keeps its
+   2px. */
+.mdp-toc-toggle {
+  white-space: nowrap;
+  padding-left: 8px;
+}
+/* One chevron, turned over when the rail is open — the same glyph moving beats
+   two glyphs swapping. */
+.mdp-toc-chevron {
+  opacity: 0.8;
+  transition: transform 120ms ease;
+}
+.mdp-toc-toggle[aria-expanded="true"] .mdp-toc-chevron {
+  transform: rotate(180deg);
+}
 
 /* --- search options row ------------------------------------------------------ */
 
@@ -288,13 +373,156 @@ body {
   border-color: var(--accent);
 }
 
-/* An unfinished or invalid regular expression: say so on the input rather than
-   silently reporting no matches. */
-.mdp-toolbar.mdp-find-invalid input[type="text"] {
+/*
+ * The search field answers the only question being asked of it: did that find
+ * anything? Green while there are matches, red while there are none — including
+ * when the reason for none is an unfinished or invalid regular expression,
+ * which would otherwise look identical to a search that simply missed.
+ *
+ * These sit below the :focus rule and repeat the :focus selector so the state
+ * colour survives the field being focused, which it almost always is.
+ */
+.mdp-toolbar.mdp-find-hit input[type="text"],
+.mdp-toolbar.mdp-find-hit input[type="text"]:focus {
+  border-color: var(--good);
+}
+
+.mdp-toolbar.mdp-find-miss input[type="text"],
+.mdp-toolbar.mdp-find-miss input[type="text"]:focus,
+.mdp-toolbar.mdp-find-invalid input[type="text"],
+.mdp-toolbar.mdp-find-invalid input[type="text"]:focus {
   border-color: var(--crit);
 }
+
+.mdp-toolbar.mdp-find-miss .mdp-find-count,
 .mdp-toolbar.mdp-find-invalid .mdp-find-count {
   color: var(--crit);
+}
+
+/* --- trust toggle ------------------------------------------------------------- */
+
+/*
+ * One globe, two states. Untrusted, it carries a slash; trusted, the slash goes
+ * and the glyph takes the accent. The slash is drawn twice — a thick stroke in
+ * the button's own background colour first, cutting a notch through the globe,
+ * then the line itself — which is what keeps a diagonal over a circle full of
+ * lines legible at this size.
+ */
+.mdp-trust-cut {
+  stroke: var(--mdp-icon-cut);
+  stroke-width: 4.5;
+}
+
+.mdp-trust-toggle[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+.mdp-trust-toggle[aria-pressed="true"] .mdp-trust-cut,
+.mdp-trust-toggle[aria-pressed="true"] .mdp-trust-slash {
+  display: none;
+}
+
+/* Text for screen readers only: the control is an icon with a tooltip, and a
+   tooltip is not an accessible name. */
+.mdp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- trust dialog ------------------------------------------------------------- */
+
+.mdp-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.45);
+  font: 12px/1.55 "Segoe UI", system-ui, sans-serif;
+}
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
+.mdp-dialog[hidden] {
+  display: none;
+}
+
+.mdp-dialog-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.mdp-dialog-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mdp-dialog-body {
+  margin: 0 0 10px;
+  color: var(--ink-2);
+}
+.mdp-dialog-body strong {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mdp-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.mdp-dialog-button {
+  font: inherit;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: inherit;
+  cursor: pointer;
+}
+.mdp-dialog-button:hover {
+  border-color: var(--muted);
+}
+.mdp-dialog-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The affirmative action carries the warning colour, not the accent: agreeing
+   here widens what the document may do. */
+.mdp-dialog-primary {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+.mdp-dialog-primary:hover {
+  border-color: var(--warn);
+  background: var(--warn);
+  color: var(--surface);
 }
 
 /* --- match highlights --------------------------------------------------------- */
@@ -346,7 +574,7 @@ mark.mdp-find.mdp-find-current {
   bottom: 0;
   z-index: 10;
   box-sizing: border-box;
-  width: 220px;
+  width: var(--mdp-toc-width);
   overflow-y: auto;
   padding: 8px 0;
   background: var(--surface-2);
@@ -379,9 +607,12 @@ mark.mdp-find.mdp-find-current {
 .mdp-toc-list a.mdp-toc-h3 { padding-left: 32px; }
 .mdp-toc-list a.mdp-toc-h4 { padding-left: 42px; }
 
-/* A docked rail on a narrow pane covers too much of the document; drop it. */
+/* A docked rail on a narrow pane covers too much of the document; drop it —
+   and with nothing to line up against, the right-hand group stops reserving the
+   rail's width and gives the space back to the search field. */
 @media (max-width: 640px) {
   .mdp-toc { display: none; }
+  .mdp-toolbar-right { width: auto; }
 }
 
 /* --- notices / diagnostics ---------------------------------------------- */
@@ -407,6 +638,7 @@ mark.mdp-find.mdp-find-current {
 @media print {
   body { overflow: visible; padding-top: 0; }
   .notice { display: none; }
+  .mdp-dialog { display: none; }
   .mdp-toc { display: none; }
   .mdp-toolbar { display: none; }
   .markdown-body { max-width: none; padding: 0; }

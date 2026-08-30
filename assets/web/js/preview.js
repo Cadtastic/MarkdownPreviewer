@@ -3,7 +3,9 @@
  *
  * Contract with the host (WebView2 <-> page, JSON over postMessage):
  *
- *   host -> page  { kind: "render", token, markdown, theme, docBase, settings }
+ *   host -> page  { kind: "render", token, markdown, theme, docBase, settings,
+ *                                     documentGeneration, documentName,
+ *                                     trusted, trustable }
  *   host -> page  { kind: "theme",  theme }
  *   host -> page  { kind: "settings", settings }
  *
@@ -11,6 +13,7 @@
  *   page -> host  { kind: "rendered", token, elapsedMs, usedMermaid, usedMath, warnings[] }
  *   page -> host  { kind: "failed", token, message }
  *   page -> host  { kind: "openExternal", url }
+ *   page -> host  { kind: "trustDocument", trusted }
  *
  * Design notes worth knowing before editing:
  *
@@ -32,7 +35,7 @@
 
   // Reported to the host in the "ready" handshake and logged, so a mismatch
   // between the installed binaries and the render assets is visible.
-  var VERSION = '1.3.0';
+  var VERSION = '1.4.0';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
@@ -51,7 +54,11 @@
     tocVisible: true,
     themeName: 'system',      // 'system' or a named palette from THEME_LIGHTNESS
     appearance: 'light',      // effective lightness after resolving themeName
-    imageText: Object.create(null)   // img src -> text the host extracted from it
+    imageText: Object.create(null),  // img src -> text the host extracted from it
+    documentName: '',         // shown in the trust dialog so it can name its subject
+    documentGeneration: 0,    // changes only when the reader moves to another file
+    trusted: false,           // this document may load resources from the internet
+    trustable: false          // ...and it has a path to record that grant against
   };
 
   var assetLoads = Object.create(null);   // href -> Promise
@@ -63,6 +70,7 @@
   function defaultSettings() {
     return {
       allowRawHtml: true,
+      allowRemoteImages: false,
       linkify: true,
       typographer: false,
       highlight: true,
@@ -123,6 +131,15 @@
   }
 
   /*
+   * Whether this document may fetch from the internet. Mirrors the host's own
+   * gate exactly — the standing preference, or a trust grant for this one file
+   * — so the page and the host never disagree about what should load.
+   */
+  function remoteImagesAllowed() {
+    return state.settings.allowRemoteImages === true || state.trusted === true;
+  }
+
+  /*
    * Resolve a URL found in the Markdown source.
    *
    * Returns '' for anything we refuse to emit. Returning empty rather than
@@ -136,7 +153,20 @@
     if (value.charAt(0) === '#') { return value; }            // in-page anchor
 
     if (/^[a-z][a-z0-9+.\-]*:/i.test(value)) {                // has a scheme
-      if (/^https?:/i.test(value)) { return value; }
+      if (/^https?:/i.test(value)) {
+        // Links stay clickable however the document is trusted: following one
+        // is a deliberate act, and the host re-validates before handing it to
+        // the shell. An image is different — it fetches itself — so the URL is
+        // withheld unless this document is allowed to reach the internet.
+        //
+        // The host refuses these requests too, and that remains the security
+        // boundary. Withholding the URL here is about behaviour, not safety:
+        // an <img> that is never given a src issues no request, so it cannot
+        // be answered from the browser's cache. That is what makes withdrawing
+        // trust take effect on the very next render instead of leaving already
+        // fetched images on screen until the cached copies are evicted.
+        return (kind === 'image' && !remoteImagesAllowed()) ? '' : value;
+      }
       if (kind === 'link' && /^mailto:/i.test(value)) { return value; }
       if (kind === 'image' && /^data:image\/(png|jpeg|gif|webp|svg\+xml|avif);/i.test(value)) {
         return value;
@@ -269,11 +299,17 @@
       var token = tokens[idx];
       var i = token.attrIndex('src');
       if (i >= 0) {
-        var resolved = resolveDocumentUrl(token.attrs[i][1], 'image');
+        var raw = token.attrs[i][1];
+        var resolved = resolveDocumentUrl(raw, 'image');
         if (!resolved) {
-          // Keep the alt text visible instead of emitting a dead <img>.
-          return '<span class="mdp-broken">' +
-                 escapeHtml(token.content || token.attrs[i][1]) + '</span>';
+          // Keep the alt text visible instead of emitting a dead <img>, and
+          // separate the two reasons a URL can vanish: an image held back for
+          // want of trust is a decision the reader can reverse from the
+          // toolbar, where a path that cannot be resolved is not.
+          var blocked = /^\s*https?:/i.test(String(raw || ''));
+          return '<span class="mdp-broken' + (blocked ? ' mdp-blocked' : '') + '"' +
+                 (blocked ? ' title="Blocked. Trust this document from the toolbar to load images from the internet."' : '') +
+                 '>' + escapeHtml(token.content || raw) + '</span>';
         }
         token.attrs[i][1] = resolved;
       }
@@ -489,7 +525,6 @@
    */
   function syncRail() {
     var toggle = document.getElementById('toc-toggle');
-    var chevron = document.getElementById('toc-chevron');
     var eligible = tocList.childElementCount >= 2;
     var open = state.tocVisible && eligible && !find.bar.hidden;
 
@@ -501,8 +536,70 @@
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.classList.toggle('mdp-active', open);
     }
+  }
 
-    if (chevron) { chevron.textContent = open ? '\u25B4' : '\u25BE'; }
+  // ------------------------------------------------------------------ trust ---
+
+  /*
+   * Trusting a document lifts exactly one restriction: the host's refusal to
+   * serve http(s) requests, which is what blocks remote images. Scripts,
+   * frames, forms and outbound connections stay blocked by CSP either way, so
+   * the worst a trusted document can do is tell a remote server it was opened.
+   * That is still worth a dialog — it is how tracking pixels work — but it is
+   * not worth pretending the grant is broader than it is.
+   *
+   * The host owns the decision and the memory of it. This page never assumes
+   * its own click succeeded: the button is repainted from the `trusted` flag on
+   * the next render, which the host sends after recording the grant.
+   */
+  var trust = {
+    toggle: document.getElementById('trust-toggle'),
+    dialog: document.getElementById('trust-dialog'),
+    name: document.getElementById('trust-dialog-name'),
+    confirm: document.getElementById('trust-confirm'),
+    cancel: document.getElementById('trust-cancel')
+  };
+
+  function syncTrustToggle() {
+    if (!trust.toggle) { return; }
+
+    trust.toggle.setAttribute('aria-pressed', state.trusted ? 'true' : 'false');
+    trust.toggle.disabled = !state.trustable;
+    trust.toggle.title = !state.trustable
+      ? 'This item has no file on disk, so it cannot be trusted'
+      : state.trusted
+        ? 'Trusted — external links are allowed. Click to stop allowing them.'
+        : 'Trust external links';
+  }
+
+  function openTrustDialog() {
+    if (!trust.dialog) { return; }
+
+    if (trust.name) {
+      trust.name.textContent = state.documentName || 'this document';
+    }
+
+    trust.dialog.hidden = false;
+
+    // Cancel takes focus, so Enter and Space — the keys someone mashes through
+    // a dialog they did not expect — decline rather than agree.
+    if (trust.cancel) { trust.cancel.focus(); }
+  }
+
+  function closeTrustDialog() {
+    if (!trust.dialog || trust.dialog.hidden) { return; }
+
+    trust.dialog.hidden = true;
+    if (trust.toggle && !trust.toggle.disabled) { trust.toggle.focus(); }
+  }
+
+  function setTrusted(trusted) {
+    closeTrustDialog();
+
+    // Optimistic only for the paint; the host's next render is the truth.
+    state.trusted = trusted === true;
+    syncTrustToggle();
+    post({ kind: 'trustDocument', trusted: state.trusted });
   }
 
   // ------------------------------------------------------------ find in page ---
@@ -592,6 +689,24 @@
     document.documentElement.style.setProperty('--mdp-bar-offset', offset + 'px');
   }
 
+  /*
+   * The search field's border answers one question: did that find anything?
+   *
+   *   ''      no query — neutral
+   *   hit     matches exist — green
+   *   miss    a query with nothing to show for it — red
+   *   invalid a regular expression that will not compile — red, and the
+   *           counter says why
+   *
+   * Every exit from runFind() goes through here, so the field can never be
+   * left wearing a stale colour from the previous query.
+   */
+  function setFindState(name) {
+    find.bar.classList.toggle('mdp-find-hit', name === 'hit');
+    find.bar.classList.toggle('mdp-find-miss', name === 'miss');
+    find.bar.classList.toggle('mdp-find-invalid', name === 'invalid');
+  }
+
   function showToolbar() {
     find.bar.hidden = false;
     layoutChrome();
@@ -605,12 +720,21 @@
     if (find.input.value) { runFind(find.input.value); }
   }
 
+  /*
+   * Dismisses the toolbar for the document on screen. Deliberately not
+   * remembered: the next selection gets the toolbar back, because it is the
+   * only way to reach search, the contents rail, the theme and the trust
+   * control, and a preference silently hiding all of that is a trap. Closing
+   * it must still work while it is closed, which is the substance of issue #1
+   * — see the note on .mdp-toolbar[hidden] in preview.css.
+   */
   function closeToolbar() {
     find.bar.hidden = true;
+    closeTrustDialog();
     layoutChrome();
     syncRail();               // the rail's control surface is gone; so is it
     clearFindMarks();
-    find.bar.classList.remove('mdp-find-invalid');
+    setFindState('');
     find.count.textContent = '';
   }
 
@@ -685,7 +809,7 @@
 
     query = String(query || '');
     if (query.length === 0) {
-      find.bar.classList.remove('mdp-find-invalid');
+      setFindState('');
       find.count.textContent = '';
       return;
     }
@@ -693,11 +817,11 @@
     var pattern = buildFindPattern(query);
     if (!pattern) {
       // Only reachable in regex mode: the user is mid-pattern, or wrong.
-      find.bar.classList.add('mdp-find-invalid');
+      setFindState('invalid');
       find.count.textContent = 'bad pattern';
       return;
     }
-    find.bar.classList.remove('mdp-find-invalid');
+    setFindState('');
 
     // Snapshot first: wrapping matches mutates the tree under the walker.
     //
@@ -782,8 +906,10 @@
     }
 
     if (find.marks.length > 0) {
+      setFindState('hit');
       setCurrentMatch(0);
     } else {
+      setFindState('miss');
       find.count.textContent = '0/0';
     }
   }
@@ -1067,6 +1193,45 @@
     }
     if (message.docBase) { state.docBase = message.docBase; }
 
+    // A search belongs to the document it was typed against. Explorer reuses
+    // this page for every selection, so without this the query — and its match
+    // count and green border — follow the reader from one file to the next and
+    // describe a document they are no longer looking at.
+    //
+    // Only a change of document clears it. A redraw of the SAME document (a
+    // theme flip, a trust change) must keep the query, or those controls would
+    // wipe the search out from under whoever just used them. The host is the
+    // only party that can tell those apart; a host that sends no generation at
+    // all keeps the old carry-across behaviour rather than clearing blindly.
+    var generation = typeof message.documentGeneration === 'number'
+      ? message.documentGeneration
+      : state.documentGeneration;
+
+    if (generation !== state.documentGeneration) {
+      state.documentGeneration = generation;
+
+      // Before anything else reads find.input.value below.
+      window.clearTimeout(find.timer);   // a debounce still holding the old query
+      find.input.value = '';
+      find.count.textContent = '';
+      setFindState('');
+    }
+
+    // Trust is the host's to know: it holds the path and the stored grant. A
+    // render is the only moment the page hears the current answer.
+    state.documentName = String(message.documentName || '');
+    state.trusted = message.trusted === true;
+    state.trustable = message.trustable === true;
+    syncTrustToggle();
+    closeTrustDialog();
+
+    // Any render gets the toolbar back — closing it is scoped to the document
+    // that was on screen, not made into a standing preference. Usually that
+    // means the next selection; a host-driven redraw (a theme flip on a
+    // document with diagrams in it) also counts, which is the same rule
+    // applied consistently rather than a special case worth carving out.
+    showToolbar();
+
     applyTheme(message.theme || state.theme);
     applyFontScale(state.settings.fontScalePercent);
     clearNotice();
@@ -1272,6 +1437,13 @@
       return;
     }
 
+    // Esc unwinds one layer at a time: the dialog if it is up, then the bar.
+    if (event.key === 'Escape' && trust.dialog && !trust.dialog.hidden) {
+      event.preventDefault();
+      closeTrustDialog();
+      return;
+    }
+
     if (event.key === 'Escape' && !find.bar.hidden) {
       event.preventDefault();
       closeToolbar();
@@ -1377,6 +1549,37 @@
     setTocVisible(toc.hidden);   // hidden -> open it; open -> hide it
   });
 
+  // --- trust ------------------------------------------------------------------------
+
+  /*
+   * Granting asks; withdrawing does not. Confirming the removal of a permission
+   * teaches people to click through the dialog that matters.
+   */
+  if (trust.toggle) {
+    trust.toggle.addEventListener('click', function () {
+      if (state.trusted) {
+        setTrusted(false);
+      } else {
+        openTrustDialog();
+      }
+    });
+  }
+
+  if (trust.confirm) {
+    trust.confirm.addEventListener('click', function () { setTrusted(true); });
+  }
+  if (trust.cancel) {
+    trust.cancel.addEventListener('click', closeTrustDialog);
+  }
+
+  // Clicking the backdrop is a decline, like Esc. Clicks inside the panel are
+  // not: a stray click while reading must not dismiss the question.
+  if (trust.dialog) {
+    trust.dialog.addEventListener('click', function (event) {
+      if (event.target === trust.dialog) { closeTrustDialog(); }
+    });
+  }
+
   // --- theme ----------------------------------------------------------------------
 
   state.themeName = readThemePreference();
@@ -1386,6 +1589,12 @@
   themeSelect.addEventListener('change', function () {
     setThemeName(themeSelect.value);
   });
+
+  // The toolbar ships visible, so the offset it reserves has to exist before
+  // the first document arrives or the opening render sits underneath it.
+  syncTrustToggle();
+  layoutChrome();
+  syncRail();
 
   applyTheme('light');
   post({ kind: 'ready', version: VERSION });

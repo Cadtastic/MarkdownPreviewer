@@ -49,36 +49,74 @@
   <div id="notice" class="notice" role="status" hidden></div>
 
   <!-- The toolbar: search, its options row, the contents toggle, and the only
-       close button. Ctrl+F or the context menu shows it; the document always
-       starts below it (preview.js keeps --mdp-bar-offset equal to its height).
-       The contents rail docks below it on the right and may hang over the
-       document by design. -->
-  <div id="toolbar" class="mdp-toolbar" hidden>
+       close button. Visible on every document; Esc or the × dismisses it for
+       the current preview and the next selection brings it back. The document
+       always starts below it (preview.js keeps --mdp-bar-offset equal to its
+       height).
+
+       The right-hand group is exactly as wide as the contents rail, so the
+       Contents button's left edge lands on the rail's left edge and the close
+       button sits at the far right of the bar. -->
+  <div id="toolbar" class="mdp-toolbar">
     <div class="mdp-toolbar-row">
       <input id="find-input" type="text" placeholder="Find" spellcheck="false"
              autocomplete="off" aria-label="Find in preview" />
       <span id="find-count" class="mdp-find-count"></span>
-      <button id="find-prev" class="mdp-toolbar-button" type="button" title="Previous match (Shift+Enter)">▲</button>
-      <button id="find-next" class="mdp-toolbar-button" type="button" title="Next match (Enter)">▼</button>
+      <button id="find-prev" class="mdp-toolbar-button" type="button" title="Previous match (Shift+Enter)">
+        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
+      </button>
+      <button id="find-next" class="mdp-toolbar-button" type="button" title="Next match (Enter)">
+        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
+      </button>
       <button id="find-options" class="mdp-toolbar-button" type="button"
-              title="Search options" aria-expanded="false" aria-controls="find-opts">⚙</button>
-      <span class="mdp-toolbar-divider"></span>
-      <button id="toc-toggle" class="mdp-toolbar-button mdp-toc-toggle" type="button"
-              aria-expanded="false">Contents <span id="toc-chevron" class="mdp-toc-chevron">▾</span></button>
-      <span class="mdp-toolbar-divider"></span>
-      <button id="toolbar-close" class="mdp-toolbar-button mdp-close-button" type="button"
-              title="Close (Esc)">×</button>
+              title="Search options" aria-expanded="false" aria-controls="find-opts">
+        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+          <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+        </svg>
+      </button>
+
+      <span class="mdp-toolbar-spacer"></span>
+
+      <div class="mdp-toolbar-right">
+        <button id="toc-toggle" class="mdp-toolbar-button mdp-toc-toggle" type="button"
+                aria-expanded="false">Contents
+          <svg id="toc-chevron" class="mdp-icon mdp-toc-chevron" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
+        </button>
+        <button id="toolbar-close" class="mdp-toolbar-button mdp-close-button" type="button"
+                title="Close (Esc)">
+          <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6l-12 12M6 6l12 12" /></svg>
+        </button>
+      </div>
     </div>
 
     <!-- Search options: a real row, so the states stay readable while set. The
-         theme selector sits at its right edge; the whole toolbar spans the
-         pane, so the contents rail (which starts BELOW the bar) can never
-         cover it. -->
+         document-level controls - trust, then the theme selector - sit at its
+         right edge; the whole toolbar spans the pane, so the contents rail
+         (which starts BELOW the bar) can never cover it. -->
     <div id="find-opts" class="mdp-toolbar-options" hidden>
       <label><input type="checkbox" id="find-case" /> Match case</label>
       <label><input type="checkbox" id="find-word" /> Match whole word</label>
       <label title="Combines with the others. With whole word the pattern is wrapped as \b(?:pattern)\b, so one starting or ending with a non-word character will not match."><input type="checkbox" id="find-regex" /> Regular expression</label>
       <span class="mdp-toolbar-spacer"></span>
+
+      <!-- Off by default, and it stays off until the user answers a dialog.
+           The slash is part of the glyph rather than a separate "off" icon, so
+           the two states are the same shape and read as one switch. -->
+      <button id="trust-toggle" class="mdp-toolbar-button mdp-trust-toggle" type="button"
+              aria-pressed="false" title="Trust external links">
+        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+          <path d="M3.6 9h16.8M3.6 15h16.8" />
+          <path d="M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" />
+          <path class="mdp-trust-cut" d="M4.6 4.6l14.8 14.8" />
+          <path class="mdp-trust-slash" d="M4.6 4.6l14.8 14.8" />
+        </svg>
+        <span class="mdp-sr-only">Trust external links</span>
+      </button>
+
+      <span class="mdp-toolbar-divider"></span>
+
       <label class="mdp-theme-label">Theme
         <select id="theme-select" aria-label="Colour theme">
           <option value="system">System</option>
@@ -94,6 +132,31 @@
           </optgroup>
         </select>
       </label>
+    </div>
+  </div>
+
+  <!-- Trusting a document is a security decision, so it is made in a dialog
+       rather than by a switch that flips under the pointer. Cancel is the
+       default action: it has focus when the dialog opens, and Esc chooses it.
+       Withdrawing trust needs no dialog - taking a permission away is safe. -->
+  <div id="trust-dialog" class="mdp-dialog" role="dialog" aria-modal="true"
+       aria-labelledby="trust-dialog-title" hidden>
+    <div class="mdp-dialog-panel">
+      <p id="trust-dialog-title" class="mdp-dialog-title">Trust external links in this document?</p>
+      <p class="mdp-dialog-body">
+        Images and other resources hosted on the internet will load whenever you
+        preview <strong id="trust-dialog-name">this document</strong>. That tells
+        those servers you opened the file, along with your IP address — which is
+        how tracking pixels work.
+      </p>
+      <p class="mdp-dialog-body">
+        Only do this for documents you wrote or otherwise trust. The choice is
+        remembered for this file alone, and you can turn it off at any time.
+      </p>
+      <div class="mdp-dialog-actions">
+        <button id="trust-cancel" class="mdp-dialog-button" type="button">Cancel</button>
+        <button id="trust-confirm" class="mdp-dialog-button mdp-dialog-primary" type="button">Trust this document</button>
+      </div>
     </div>
   </div>
 

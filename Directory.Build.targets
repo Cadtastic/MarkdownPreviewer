@@ -2,15 +2,41 @@
 
   <!--
     The Microsoft.Web.WebView2 package references all three of its assemblies
-    (Core, WinForms, Wpf) regardless of which UI framework the project uses.
-    The Wpf one was compiled against WPF's WindowsBase 5.0, which a
-    WinForms-only project does not have — so ResolveAssemblyReferences emits
-    MSB3277 (version conflict on WindowsBase) for every project that sees the
-    package. Nothing here uses the WPF control, so drop that reference before
-    resolution runs. Must be a target (not a plain ItemGroup): package .targets
-    are imported after the project file, so an evaluation-time Remove would run
-    before the Include exists.
+    (Core, WinForms, Wpf) unconditionally for any net5.0-or-later target — see
+    build/Common.targets in the package. The Wpf one was compiled against WPF's
+    WindowsBase 5.0, which a WinForms-only project does not have, so
+    ResolveAssemblyReferences emits MSB3277 (version conflict on WindowsBase)
+    for every project that sees the package. Nothing here uses the WPF control.
+
+    There is no supported opt-out: the package exposes WebView2UseWinRT and
+    WebView2EnableCsWinRTProjection, neither of which gates this. So the
+    reference is dropped here, twice over, because the two removals fix two
+    different symptoms:
+
+      - The ItemGroup runs at EVALUATION, which is what Visual Studio's
+        Dependencies tree is built from. Without it the reference shows up
+        under Assemblies with a warning glyph and its raw path instead of an
+        assembly name — the tell-tale of a declared-but-never-resolved
+        reference — even though the build itself is clean. Removing it at
+        evaluation is only possible from THIS file: package .targets are
+        imported after the project body (so the same Remove in a .csproj would
+        run before the Include exists) but before Directory.Build.targets.
+
+      - The target runs at EXECUTION and matches by substring, so it still
+        catches the reference if a future package version moves the assembly
+        and the path-exact removal above stops matching. That would put the
+        glyph back in the IDE while keeping the build warning-free, which is
+        the right way round for a failure nobody is watching for.
+
+    Both are no-ops once the package stops shipping the reference this way.
   -->
+  <ItemGroup>
+    <Reference Remove="$(NugetRoot)\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll"
+               Condition="'$(NugetRoot)' != ''" />
+    <Reference Remove="$(NugetRoot)\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Wpf.dll"
+               Condition="'$(NugetRoot)' != ''" />
+  </ItemGroup>
+
   <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference)"

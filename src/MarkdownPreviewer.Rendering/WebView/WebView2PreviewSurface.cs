@@ -56,6 +56,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private readonly Control _host;
     private readonly IWebAssetCatalog _assets;
     private readonly IExternalLinkLauncher _launcher;
+    private readonly ITrustedDocumentStore _trust;
     private readonly IDiagnosticLog _log;
 
     private WebView2? _webView;
@@ -67,6 +68,23 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private long _renderToken;
     private string? _mappedDocumentDirectory;
     private RenderRequest? _lastRequest;
+
+    /// <summary>
+    /// Whether the current document carries the user's trust grant. Read on the
+    /// request path by <see cref="OnWebResourceRequested"/>, so it is refreshed
+    /// per render rather than looked up per image.
+    /// </summary>
+    private bool _documentTrusted;
+
+    /// <summary>
+    /// Bumped whenever the document being previewed actually changes identity,
+    /// as opposed to the same document being drawn again for a theme flip or a
+    /// trust change. The page uses it to decide what belongs to the document
+    /// and what belongs to the session — the search query, for one.
+    /// </summary>
+    private long _documentGeneration;
+
+    private DocumentLocation? _lastLocation;
     private bool _initialising;
     private bool _initialised;
     private bool _unusable;
@@ -76,11 +94,13 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         Control host,
         IWebAssetCatalog assets,
         IExternalLinkLauncher launcher,
+        ITrustedDocumentStore trust,
         IDiagnosticLog log)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+        _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
@@ -157,9 +177,14 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             // document host is answered by hand there (a folder mapping added
             // after index.html has committed never applies to the already-loaded
             // document, and the document folder changes with every selection),
-            // and remote hosts are refused unless the user opted into
-            // AllowRemoteImages — the CSP's img-src is deliberately broad so
-            // that THIS is the enforcement point.
+            // and remote hosts are refused unless the user opted in — either
+            // through the standing AllowRemoteImages preference or by trusting
+            // this particular document. The CSP's img-src is deliberately broad
+            // so that THIS is the enforcement point.
+            //
+            // The filter is Image-scoped, which is the whole of what trust can
+            // widen: script, style, font and XHR contexts never reach here, and
+            // CSP refuses them regardless.
             webView.CoreWebView2.AddWebResourceRequestedFilter(
                 "*", CoreWebView2WebResourceContext.Image);
 
@@ -298,6 +323,19 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         ApplyDocumentHostMapping(request.Document.Location);
         ApplyBackgroundColour(request.Theme);
 
+        // Re-read per render: Explorer reuses this surface across selections, so
+        // the previous document's grant must not carry over to the next one.
+        _documentTrusted = _trust.IsTrusted(request.Document.Location.FullPath);
+
+        // Same reuse, different consequence: the page cannot tell a new
+        // selection from a redraw of the current one, because both arrive as a
+        // render message. DocumentLocation compares by path, case-insensitively.
+        if (!request.Document.Location.Equals(_lastLocation))
+        {
+            _lastLocation = request.Document.Location;
+            _documentGeneration++;
+        }
+
         long token = Interlocked.Increment(ref _renderToken);
 
         // Supersede any render still awaiting a reply so its caller unblocks.
@@ -313,6 +351,10 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             Theme = request.Theme == AppearanceTheme.Dark ? "dark" : "light",
             DocBase = "https://" + DocumentHost + "/",
             Settings = Project(request.Settings),
+            DocumentName = request.Document.Location.FileName,
+            DocumentGeneration = _documentGeneration,
+            Trusted = _documentTrusted,
+            Trustable = request.Document.Location.HasDirectory,
         };
 
         Post(message);
@@ -360,6 +402,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private static PageSettings Project(RenderSettings settings) => new()
     {
         AllowRawHtml = settings.AllowRawHtml,
+        AllowRemoteImages = settings.AllowRemoteImages,
         Linkify = settings.Linkify,
         Typographer = settings.Typographer,
         Highlight = settings.Highlight,
@@ -434,12 +477,15 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 return;
             }
 
-            // Anything else is a remote image. Off by default: remote images are
-            // how tracking pixels learn that this user looked at this file.
-            if (_lastRequest?.Settings.AllowRemoteImages != true)
+            // Anything else is remote. Off by default: remote images are how
+            // tracking pixels learn that this user looked at this file. Two
+            // things open the gate, and only these two — the standing
+            // AllowRemoteImages preference, or the user having trusted this
+            // particular document through the toolbar.
+            if (!_documentTrusted && _lastRequest?.Settings.AllowRemoteImages != true)
             {
                 e.Response = environment.CreateWebResourceResponse(
-                    null, 403, "Remote images are disabled", string.Empty);
+                    null, 403, "External resources are blocked for this document", string.Empty);
             }
         }
         catch (Exception ex)
@@ -591,13 +637,47 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         }
     }
 
+    /// <summary>
+    /// Whether a web message came from our own render page.
+    /// </summary>
+    /// <remarks>
+    /// Not a bare string comparison against <see cref="PageUrl"/>, deliberately.
+    /// The page's URI gains a <c>#fragment</c> the first time the reader follows
+    /// an in-page anchor — a heading link, a contents-rail entry — and WebView2
+    /// reports the fragment as part of <c>Source</c>. An exact match then
+    /// silently rejected every message the page sent for the rest of the page's
+    /// life: trust clicks did nothing, every render died on its 30-second
+    /// timeout, and the preview looked folder-dependent because it actually
+    /// depended on whether the reader had clicked an anchor yet. The fragment
+    /// never changes which document is talking, so it is stripped before the
+    /// comparison; scheme, host and path still have to match exactly.
+    /// </remarks>
+    internal static bool IsFromPreviewPage(string? source)
+    {
+        if (string.IsNullOrEmpty(source))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(source, UriKind.Absolute, out Uri? uri))
+        {
+            return false;
+        }
+
+        // GetLeftPart(Query) keeps everything up to and including any query
+        // string. Our page is never served with one, so a source carrying a
+        // query still fails the comparison — only the fragment is forgiven.
+        return string.Equals(
+            uri.GetLeftPart(UriPartial.Query), PageUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         PageToHostMessage? message;
         try
         {
             // Only ever trust messages that came from our own page.
-            if (!string.Equals(e.Source, PageUrl, StringComparison.OrdinalIgnoreCase))
+            if (!IsFromPreviewPage(e.Source))
             {
                 _log.Warn($"Ignoring a web message from an unexpected source: {e.Source}");
                 return;
@@ -691,6 +771,29 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 else
                 {
                     _log.Debug($"Ignored a document link that does not resolve: {message.Url}");
+                }
+
+                break;
+
+            case "trustDocument":
+                // The page has already put its warning in front of the user and
+                // taken a deliberate answer; this is the recorded result, not
+                // the request. Re-render afterwards so the resources that were
+                // refused a moment ago are fetched (or, on withdrawal, dropped).
+                if (_lastRequest is { } trustTarget)
+                {
+                    string? path = trustTarget.Document.Location.FullPath;
+
+                    if (trustTarget.Document.Location.HasDirectory)
+                    {
+                        _trust.SetTrusted(path, message.Trusted);
+                        _documentTrusted = _trust.IsTrusted(path);
+                        _ = RenderAsync(trustTarget, CancellationToken.None);
+                    }
+                    else
+                    {
+                        _log.Debug("Ignoring a trust change for an item with no file on disk.");
+                    }
                 }
 
                 break;
