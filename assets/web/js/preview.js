@@ -67,6 +67,9 @@
     hasTasks: false,          // ...and there is at least one checkbox to edit
     remoteImages: 0,          // http(s) images this document refers to, allowed or not
     expanded: false,          // document fills the pane instead of its reading measure
+    viewSource: false,        // showing the file's own text instead of the rendered document
+    highlightSource: false,   // ...and colouring it
+    lastMessage: null,        // the render that produced what is on screen
     bodyLine: 0,              // source line the rendered body starts on (after front matter)
     trusted: false,           // this document may load resources from the internet
     trustable: false          // ...and it has a path to record that grant against
@@ -587,9 +590,11 @@
 
     if (toggle) {
       toggle.disabled = !eligible;
-      setTip(toggle, eligible
-        ? 'Contents\nJump to a heading.'
-        : 'Contents\nThis document has fewer than two headings.');
+      setTip(toggle, state.viewSource
+        ? 'Contents\nNot available while viewing source.'
+        : eligible
+          ? 'Contents\nJump to a heading.'
+          : 'Contents\nThis document has fewer than two headings.');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.classList.toggle('mdp-active', open);
     }
@@ -625,9 +630,11 @@
     // Nothing to grant is its own reason, and a different one to say: a
     // document with no remote images gains nothing from being trusted.
     var nothingToTrust = state.remoteImages === 0;
-    trust.toggle.disabled = !state.trustable || nothingToTrust;
+    trust.toggle.disabled = !state.trustable || nothingToTrust || state.viewSource;
 
-    setTip(trust.toggle, !state.trustable
+    setTip(trust.toggle, state.viewSource
+      ? 'Trust external image links\nNot available while viewing source.'
+      : !state.trustable
       ? 'Trust external image links\nThis item has no file on disk to trust.'
       : nothingToTrust
         ? 'Trust external image links\nThis document has no external image links.'
@@ -825,15 +832,16 @@
     if (taskEdit.toggle) {
       // Three different reasons the control can be unavailable, and the
       // tooltip says which one applies rather than leaving a dead button.
-      var usable = state.taskEditable && state.hasTasks;
+      var usable = state.taskEditable && state.hasTasks && !state.viewSource;
 
       taskEdit.toggle.setAttribute('aria-pressed', taskEditingActive() ? 'true' : 'false');
       taskEdit.toggle.disabled = !usable;
       setTip(taskEdit.toggle,
-        !state.hasTasks ? 'Edit checkboxes\nThis document has no task list.'
-          : !state.taskEditable ? 'Edit checkboxes\nThis document has no file to save to.'
-            : state.editTasks ? 'Checkboxes are editable\nChanges save to the file straight away.'
-              : 'Edit checkboxes\nChanges save to the file straight away.');
+        state.viewSource ? 'Edit checkboxes\nNot available while viewing source.'
+          : !state.hasTasks ? 'Edit checkboxes\nThis document has no task list.'
+            : !state.taskEditable ? 'Edit checkboxes\nThis document has no file to save to.'
+              : state.editTasks ? 'Checkboxes are editable\nChanges save to the file straight away.'
+                : 'Edit checkboxes\nChanges save to the file straight away.');
     }
 
     syncTaskBoxes();
@@ -846,6 +854,95 @@
     for (var i = 0; i < boxes.length; i++) {
       boxes[i].disabled = !active;
     }
+  }
+
+  // ------------------------------------------------------------- view source ---
+
+  /*
+   * Shows the file as it is on disk instead of the document it renders to.
+   *
+   * A view preference rather than a document one - someone checking raw
+   * Markdown is usually checking several files - so it lives in local storage
+   * beside the other view choices rather than in the host's per-document
+   * stores.
+   *
+   * Redrawing is a re-render of the message already in hand: nothing about the
+   * document has changed, only how it is being shown, so there is no reason to
+   * ask the host for it again. Going back to the rendered view has to take the
+   * same path anyway, because diagrams and mathematics need re-running.
+   */
+  var viewSource = {
+    toggle: document.getElementById('view-source'),
+    highlight: document.getElementById('source-highlight'),
+    highlightLabel: document.getElementById('source-highlight-label')
+  };
+
+  function readViewSourcePreferences() {
+    try {
+      state.viewSource = window.localStorage.getItem('mdp.viewSource') === '1';
+      state.highlightSource = window.localStorage.getItem('mdp.highlightSource') === '1';
+    } catch (_) { /* defaults stand */ }
+  }
+
+  function storeViewSourcePreferences() {
+    try {
+      window.localStorage.setItem('mdp.viewSource', state.viewSource ? '1' : '0');
+      window.localStorage.setItem('mdp.highlightSource', state.highlightSource ? '1' : '0');
+    } catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function syncViewSourceControls() {
+    if (viewSource.toggle) {
+      viewSource.toggle.setAttribute('aria-pressed', state.viewSource ? 'true' : 'false');
+      setTip(viewSource.toggle, state.viewSource
+        ? 'Viewing source\nShowing the file as it is on disk.'
+        : 'View source\nShow the file as it is on disk.');
+    }
+
+    if (viewSource.highlight) {
+      viewSource.highlight.checked = state.highlightSource;
+    }
+
+    // The option does nothing outside source view, and saying so beats leaving
+    // a live-looking checkbox that changes nothing.
+    if (viewSource.highlightLabel) {
+      viewSource.highlightLabel.classList.toggle('mdp-option-idle', !state.viewSource);
+      setTip(viewSource.highlightLabel, state.viewSource
+        ? 'Syntax highlighting\nColours the raw Markdown.'
+        : 'Syntax highlighting\nApplies while viewing source.');
+    }
+  }
+
+  /*
+   * Paints the raw text.
+   *
+   * The text goes in as textContent and highlight.js is pointed at the element
+   * afterwards - its own documented entry point - so the file's own angle
+   * brackets are never parsed as markup on the way in. Highlighting is a
+   * nicety and never a failure: if it is unavailable or throws on the file,
+   * the plain text is already on screen.
+   */
+  function paintSource(source) {
+    var pre = document.createElement('pre');
+    pre.className = 'mdp-source';
+
+    var code = document.createElement('code');
+    code.textContent = source;
+
+    if (state.highlightSource && typeof window.hljs !== 'undefined') {
+      code.className = 'language-markdown';
+      try { window.hljs.highlightElement(code); }
+      catch (_) { /* the unhighlighted text stands */ }
+    }
+
+    pre.appendChild(code);
+    content.textContent = '';
+    content.appendChild(pre);
+  }
+
+  /* Re-shows the document already on screen under the current view settings. */
+  function redrawCurrentDocument() {
+    if (state.lastMessage) { render(state.lastMessage); }
   }
 
   // ------------------------------------------------------------ expanded view ---
@@ -1563,6 +1660,10 @@
   // ------------------------------------------------------------------ render ---
 
   function render(message) {
+    // Kept so the view toggles can redraw the same document without asking the
+    // host for it again.
+    state.lastMessage = message;
+
     // Adopt the host's token rather than minting our own — see isCurrent().
     var token = typeof message.token === 'number' ? message.token : (state.token + 1);
     state.token = token;
@@ -1633,30 +1734,39 @@
     var env = {};
     var html = '';
 
-    try {
-      html = parserFor(state.settings).render(split.body, env);
-    } catch (error) {
-      fail(token, 'Markdown parse failed: ' + error.message);
-      return;
+    if (state.viewSource) {
+      // The whole file, front matter included: the point is to show what is
+      // actually on disk, not a tidied version of it.
+      paintSource(source);
+    } else {
+      try {
+        html = parserFor(state.settings).render(split.body, env);
+      } catch (error) {
+        fail(token, 'Markdown parse failed: ' + error.message);
+        return;
+      }
+
+      if (!isCurrent(token)) { return; }
+
+      if (split.frontMatter !== null && state.settings.showFrontMatter) {
+        html = frontMatterHtml(split.frontMatter) + html;
+      }
+
+      content.innerHTML = html;
+
+      if (state.settings.allowRawHtml) {
+        try { sanitiseRawHtml(content); }
+        catch (error) { warnings.push('Sanitiser: ' + error.message); }
+      }
+
+      if (state.settings.taskLists) {
+        try { applyTaskLists(content); }
+        catch (error) { warnings.push('Task lists: ' + error.message); }
+      }
     }
 
     if (!isCurrent(token)) { return; }
-
-    if (split.frontMatter !== null && state.settings.showFrontMatter) {
-      html = frontMatterHtml(split.frontMatter) + html;
-    }
-
-    content.innerHTML = html;
-
-    if (state.settings.allowRawHtml) {
-      try { sanitiseRawHtml(content); }
-      catch (error) { warnings.push('Sanitiser: ' + error.message); }
-    }
-
-    if (state.settings.taskLists) {
-      try { applyTaskLists(content); }
-      catch (error) { warnings.push('Task lists: ' + error.message); }
-    }
+    syncViewSourceControls();
 
     // Only knowable once the body is on screen: whether there are checkboxes
     // to edit, how many remote images there are to trust, and whether the
@@ -1691,11 +1801,11 @@
     // document opens scrolled to wherever the previous one was.
     window.scrollTo(0, 0);
 
-    var mermaidStep = state.settings.mermaid && env.usedMermaid
+    var mermaidStep = !state.viewSource && state.settings.mermaid && env.usedMermaid
       ? renderMermaid(content, token, warnings)
       : Promise.resolve(false);
 
-    var mathStep = state.settings.math && documentHasMath(split.body)
+    var mathStep = !state.viewSource && state.settings.math && documentHasMath(split.body)
       ? renderMath(content, token, warnings)
       : Promise.resolve(false);
 
@@ -2001,6 +2111,29 @@
       syncTaskEditToggle();
       // The host owns the answer per document; it comes back on the next render.
       post({ kind: 'setTaskEdit', enabled: state.editTasks });
+    });
+  }
+
+  // --- view source --------------------------------------------------------------
+
+  readViewSourcePreferences();
+  syncViewSourceControls();
+
+  if (viewSource.toggle) {
+    viewSource.toggle.addEventListener('click', function () {
+      state.viewSource = !state.viewSource;
+      storeViewSourcePreferences();
+      syncViewSourceControls();
+      redrawCurrentDocument();
+    });
+  }
+
+  if (viewSource.highlight) {
+    viewSource.highlight.addEventListener('change', function () {
+      state.highlightSource = viewSource.highlight.checked;
+      storeViewSourcePreferences();
+      syncViewSourceControls();
+      if (state.viewSource) { redrawCurrentDocument(); }
     });
   }
 

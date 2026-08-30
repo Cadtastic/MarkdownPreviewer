@@ -13,6 +13,21 @@ leaving the pane.
 
 ### Added
 
+- **View source.** A toggle between the options gear and the expand control
+  swaps the rendered document for the file exactly as it sits on disk — front
+  matter included, nothing tidied — so you can see what a document actually
+  contains rather than what it renders to. A **Syntax highlighting** option in
+  the options row colours the raw Markdown; it is off by default, and reads as
+  inert while the rendered view is showing, since that is the only place it
+  applies.
+
+  The setting is remembered for every document rather than per file: someone
+  checking raw Markdown is usually checking several. Search still works, and
+  finding a link or a heading in the raw file is much of the point. The
+  controls that mean nothing against plain text — contents, checkbox editing,
+  trust — disable themselves and say that source view is the reason, rather
+  than blaming the document.
+
 - **Expand the preview to the full pane width.** A toggle in the view controls
   gives the document every pixel the pane has: the centred reading measure goes
   and the reading gutter shrinks. Toggling back restores the previous width

@@ -703,6 +703,83 @@ ok('the match count sits inside it too',
    window.document.querySelector('.mdp-find-field .mdp-find-count') !== null);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
+console.log('\n== view source ==');
+// Shows the file as it is on disk. A view preference, not a document one, so
+// it is remembered for every document rather than per file.
+const sourceToggle = window.document.getElementById('view-source');
+const trustBtn = window.document.getElementById('trust-toggle');
+const sourceHighlight = window.document.getElementById('source-highlight');
+const sourceDoc = '---\ntitle: T\n---\n\n# Heading\n\nSome **bold** text.\n\n- [ ] a task\n';
+
+c = render(sourceDoc);
+ok('starts on the rendered document', !c.querySelector('pre.mdp-source'));
+ok('the toggle reads as unpressed', sourceToggle.getAttribute('aria-pressed') === 'false');
+
+sourceToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling shows the raw text', !!c.querySelector('pre.mdp-source'));
+ok('and reads as pressed', sourceToggle.getAttribute('aria-pressed') === 'true');
+ok('the choice is persisted for every document',
+   window.localStorage.getItem('mdp.viewSource') === '1');
+
+// The whole file, front matter included - the point is what is on disk.
+const shown = c.querySelector('pre.mdp-source').textContent;
+ok('the source is shown verbatim', shown === sourceDoc, JSON.stringify(shown));
+ok('front matter is not stripped out of it', shown.includes('title: T'));
+ok('nothing is rendered as markup', !c.querySelector('h1') && !c.querySelector('strong'));
+
+// Markdown that would otherwise become markup must stay text.
+c = render('# Live\n\n<b>raw html</b>\n', { allowRawHtml: true });
+ok('raw HTML in the file is shown as text, not parsed',
+   c.querySelector('pre.mdp-source').textContent.includes('<b>raw html</b>') &&
+   !c.querySelector('pre.mdp-source b'));
+
+// Highlighting is off by default and is its own option.
+ok('highlighting is unchecked by default', sourceHighlight.checked === false);
+ok('unhighlighted source has no token markup',
+   c.querySelector('pre.mdp-source code').children.length === 0);
+
+sourceHighlight.checked = true;
+sourceHighlight.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('turning it on colours the source',
+   c.querySelector('pre.mdp-source code').children.length > 0);
+ok('and that choice persists too',
+   window.localStorage.getItem('mdp.highlightSource') === '1');
+ok('the text still reads exactly as the file does',
+   c.querySelector('pre.mdp-source').textContent.includes('<b>raw html</b>'));
+
+sourceHighlight.checked = false;
+sourceHighlight.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('turning it off goes back to plain text',
+   c.querySelector('pre.mdp-source code').children.length === 0);
+
+// Controls that mean nothing against raw text say so rather than sitting there
+// enabled.
+c = render(sourceDoc, {}, 'light', { taskEditOn: true });
+ok('checkbox editing is unavailable in source view', taskEditToggle.disabled === true);
+ok('and says that is why',
+   (taskEditToggle.getAttribute('data-mdp-tip') || '').includes('viewing source'),
+   taskEditToggle.getAttribute('data-mdp-tip'));
+
+c = render('![b](https://cdn.example.com/b.png)\n');
+ok('trust is unavailable in source view', trustBtn.disabled === true);
+ok('and says that is why',
+   (trustBtn.getAttribute('data-mdp-tip') || '').includes('viewing source'),
+   trustBtn.getAttribute('data-mdp-tip'));
+
+// Search still works: finding a link or a heading in the raw file is the point.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+ctrlF();
+ok('search finds matches in the raw text', (await search('widget')) === '1/3',
+   findCount.textContent);
+await search('');
+
+// Back to the rendered document.
+sourceToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling off restores the rendered document',
+   !c.querySelector('pre.mdp-source') && !!c.querySelector('h1'));
+ok('and the choice is persisted', window.localStorage.getItem('mdp.viewSource') === '0');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
 console.log('\n== expand preview width ==');
 const expandToggle = window.document.getElementById('expand-view');
 c = render('# Wide\n\nBody text.\n');
@@ -1041,9 +1118,9 @@ ok('Contents button leads the right-hand group',
    toolbarRow.querySelector('.mdp-toolbar-right').firstElementChild.id === 'toc-toggle');
 // The view controls sit between Contents and the close button, right-aligned,
 // rather than trailing the search field.
-ok('options and expand sit between Contents and close',
+ok('the view controls sit between Contents and close, in order',
    [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(',')
-     === 'find-options,expand-view,toolbar-close',
+     === 'find-options,view-source,expand-view,toolbar-close',
    [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(','));
 ok('neither of them trails the search field',
    toolbarRow.querySelector('.mdp-find-field ~ button') === null);

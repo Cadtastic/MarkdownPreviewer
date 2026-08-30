@@ -48,6 +48,8 @@ does, but integrated where you already are.
   and saves the change straight to the file, one character at a time
 - **Room to read** — expand the document to the full pane width when a table or
   diagram needs it, and collapse back to the reading measure when it does not
+- **See the source** — swap the rendered document for the raw Markdown, with
+  optional syntax highlighting, without leaving the preview pane
 - **Local links turn the page** — click `docs/architecture.md` in a README and
   Explorer navigates to that file and selects it, so the preview follows the
   link; a toolbar switch opens links in their default app instead

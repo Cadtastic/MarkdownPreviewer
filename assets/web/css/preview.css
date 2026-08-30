@@ -494,6 +494,44 @@ body {
 .mdp-linkmode-toggle[aria-pressed="true"] .mdp-lm-locate { display: none; }
 .mdp-linkmode-toggle[aria-pressed="false"] .mdp-lm-app { display: none; }
 
+/* --- view source ---------------------------------------------------------------- */
+
+.mdp-source-toggle[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+
+/*
+ * The file as it is on disk. Wrapped rather than scrolled sideways: a long
+ * line in Markdown is usually prose, and reading it should not mean dragging a
+ * horizontal scrollbar back and forth.
+ */
+.markdown-body pre.mdp-source {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.markdown-body pre.mdp-source code {
+  display: block;
+  padding: 0;
+  background: none;
+  font-size: calc(12px * var(--mdp-font-scale));
+  line-height: 1.55;
+}
+
+/* An option that only bites in one mode should look inert in the other. */
+.mdp-toolbar-options label.mdp-option-idle {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* --- expand toggle -------------------------------------------------------------- */
 
 /*

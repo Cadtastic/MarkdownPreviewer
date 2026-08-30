@@ -99,6 +99,20 @@
             </svg>
           </button>
 
+          <!-- Shows the file's own text instead of the rendered document.
+               A view preference, so it is remembered for every document rather
+               than per file: someone checking raw Markdown is usually checking
+               several. -->
+          <button id="view-source" class="mdp-toolbar-button mdp-source-toggle" type="button"
+                  aria-pressed="false" data-mdp-tip="">
+            <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M7 8l-4 4l4 4" />
+              <path d="M17 8l4 4l-4 4" />
+              <path d="M14 4l-4 16" />
+            </svg>
+            <span class="mdp-sr-only">View source</span>
+          </button>
+
           <!-- Widens the document to fill the pane. The glyph shows the direction
                the next click takes it: arrows out to expand, arrows in to restore. -->
           <button id="expand-view" class="mdp-toolbar-button mdp-expand-toggle" type="button"
@@ -134,6 +148,10 @@
       <label><input type="checkbox" id="find-case" /> Match case</label>
       <label><input type="checkbox" id="find-word" /> Match whole word</label>
       <label data-mdp-tip="Combines with the other options.&#10;With whole word the pattern is wrapped as \b(?:pattern)\b, so one&#10;starting or ending with a non-word character cannot match."><input type="checkbox" id="find-regex" /> Regular expression</label>
+      <label id="source-highlight-label"
+             data-mdp-tip="Syntax highlighting&#10;Colours the raw Markdown while viewing source."><input
+             type="checkbox" id="source-highlight" /> Syntax highlighting</label>
+
       <span class="mdp-toolbar-spacer"></span>
 
       <!-- Where a click on a local link goes. Two modes, so the glyph states
