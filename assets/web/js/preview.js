@@ -914,28 +914,307 @@
   }
 
   /*
-   * Paints the raw text.
+   * Markdown source highlighting.
    *
-   * The text goes in as textContent and highlight.js is pointed at the element
-   * afterwards - its own documented entry point - so the file's own angle
-   * brackets are never parsed as markup on the way in. Highlighting is a
-   * nicety and never a failure: if it is unavailable or throws on the file,
-   * the plain text is already on screen.
+   * highlight.js has a markdown grammar, but not one that answers the
+   * questions a reader of raw Markdown actually has: it paints front matter as
+   * several unrelated things, cannot bold a key or a table heading, separates
+   * a fence from the language it names, leaves mathematics as prose, and shows
+   * the inside of a ```csharp block as Markdown rather than as C#. So the
+   * source view tokenises the file itself, line by line, and hands the body of
+   * each fenced block to highlight.js under the language the fence declares.
+   *
+   * Every colour is one of the palette tokens the rest of the chrome already
+   * uses. That is deliberate: those tokens are defined per theme against that
+   * theme's own surfaces, so source highlighting is legible in all seven
+   * without a single new colour, and a theme added later inherits it.
+   */
+
+  /* Beyond this, tokenising costs more than the colour is worth. */
+  var MAX_HIGHLIGHTED_SOURCE = 300000;
+
+  var SRC = {
+    frontFence: /^(---|\+\+\+)[ \t]*$/,
+    frontPair: /^([ \t]*)([A-Za-z0-9_.$-][A-Za-z0-9_.\[\]$ -]*?)([ \t]*:)(.*)$/,
+    fence: /^([ \t]*)(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+#.-]*)[ \t]*(.*)$/,
+    mathFence: /^[ \t]*(\$\$|\\\[|\\\])[ \t]*$/,
+    tableRow: /^[ \t]*\|/,
+    tableRule: /^[ \t]*\|[\s:|-]*\|[ \t]*$/,
+    heading: /^[ \t]{0,3}#{1,6}([ \t]|$)/,
+    rule: /^[ \t]{0,3}((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$/,
+    quote: /^([ \t]*>+[ \t]?)(.*)$/,
+    list: /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)/
+  };
+
+  /*
+   * Inline spans, tried at every position with the earliest match winning.
+   * Order settles ties: code first, because a backtick span may legitimately
+   * contain asterisks and underscores that are not emphasis.
+   */
+  var SRC_INLINE = [
+    ['mdp-s-code', /`[^`\n]+`/],
+    ['mdp-s-math', /\$\$[^\n]+?\$\$|\\\([^\n]*?\\\)|\$[^\s$][^\n$]*?\$/],
+    ['mdp-s-link', /!?\[[^\]\n]*\]\([^)\n]*\)/],
+    ['mdp-s-autolink', /<https?:\/\/[^>\s]+>/],
+    ['mdp-s-strong', /\*\*[^\n]+?\*\*|__[^\n]+?__/],
+    ['mdp-s-em', /\*[^\s*][^\n*]*?\*|_[^\s_][^\n_]*?_/],
+    ['mdp-s-html', /<\/?[A-Za-z][^>\n]*>/]
+  ];
+
+  function srcSpan(className, text) {
+    var el = document.createElement('span');
+    el.className = className;
+    el.textContent = text;
+    return el;
+  }
+
+  function appendSourceInline(parent, text) {
+    var pos = 0;
+
+    while (pos < text.length) {
+      var rest = text.slice(pos);
+      var bestIndex = -1;
+      var bestText = '';
+      var bestClass = '';
+
+      for (var i = 0; i < SRC_INLINE.length; i++) {
+        var found = rest.match(SRC_INLINE[i][1]);
+        if (found && (bestIndex < 0 || found.index < bestIndex)) {
+          bestIndex = found.index;
+          bestText = found[0];
+          bestClass = SRC_INLINE[i][0];
+        }
+      }
+
+      if (bestIndex < 0) { break; }
+
+      if (bestIndex > 0) {
+        parent.appendChild(document.createTextNode(rest.slice(0, bestIndex)));
+      }
+
+      parent.appendChild(srcSpan(bestClass, bestText));
+      pos += bestIndex + bestText.length;
+    }
+
+    if (pos < text.length) {
+      parent.appendChild(document.createTextNode(text.slice(pos)));
+    }
+  }
+
+  /*
+   * The body of a fenced block, coloured as whatever the fence named. An
+   * unknown or absent language leaves plain text rather than guessing: an
+   * auto-detected wrong language is more confusing than none at all.
+   */
+  function appendFencedCode(parent, text, language) {
+    var el = document.createElement('code');
+    el.className = 'mdp-s-codeblock';
+    el.textContent = text;
+
+    if (language && typeof window.hljs !== 'undefined' &&
+        window.hljs.getLanguage(language)) {
+      el.className += ' language-' + language;
+      try { window.hljs.highlightElement(el); }
+      catch (_) { /* the plain text is already in place */ }
+    }
+
+    parent.appendChild(el);
+  }
+
+  /* One colour for the whole block; only the keys are picked out, in bold. */
+  function appendFrontMatterLine(parent, raw) {
+    var pair = raw.match(SRC.frontPair);
+    if (!pair) {
+      parent.appendChild(srcSpan('mdp-s-front', raw));
+      return;
+    }
+
+    if (pair[1]) { parent.appendChild(srcSpan('mdp-s-front', pair[1])); }
+    parent.appendChild(srcSpan('mdp-s-front mdp-s-key', pair[2] + pair[3]));
+    if (pair[4]) { parent.appendChild(srcSpan('mdp-s-front', pair[4])); }
+  }
+
+  /* Pipes and the alignment row are one colour; the heading row is bold. */
+  function appendTableRow(parent, raw, isHeading) {
+    var pos = 0;
+
+    for (;;) {
+      var pipe = raw.indexOf('|', pos);
+      if (pipe < 0) { break; }
+
+      if (pipe > pos) { appendTableCell(parent, raw.slice(pos, pipe), isHeading); }
+      parent.appendChild(srcSpan('mdp-s-table-rule', '|'));
+      pos = pipe + 1;
+    }
+
+    if (pos < raw.length) { appendTableCell(parent, raw.slice(pos), isHeading); }
+  }
+
+  function appendTableCell(parent, text, isHeading) {
+    if (isHeading) { parent.appendChild(srcSpan('mdp-s-table-head', text)); }
+    else { appendSourceInline(parent, text); }
+  }
+
+  function highlightSourceInto(pre, text) {
+    var lines = text.split('\n');
+    var index = 0;
+    var atStart = true;
+
+    function newline() {
+      if (!atStart) { pre.appendChild(document.createTextNode('\n')); }
+      atStart = false;
+    }
+
+    // Front matter, if the file opens with it: delimiters and body alike.
+    if (lines.length > 0 && SRC.frontFence.test(lines[0])) {
+      var closer = lines[0].trim();
+      var end = 1;
+      while (end < lines.length && lines[end].trim() !== closer) { end++; }
+
+      var last = Math.min(end, lines.length - 1);
+      for (; index <= last; index++) {
+        newline();
+        appendFrontMatterLine(pre, lines[index]);
+      }
+    }
+
+    while (index < lines.length) {
+      var raw = lines[index];
+
+      var fence = raw.match(SRC.fence);
+      if (fence) {
+        newline();
+        pre.appendChild(srcSpan('mdp-s-fence', raw));   // marker and language as one
+        index++;
+
+        var body = [];
+        var closing = fence[2].charAt(0) === '`'
+          ? /^[ \t]*`{3,}[ \t]*$/
+          : /^[ \t]*~{3,}[ \t]*$/;
+
+        while (index < lines.length && !closing.test(lines[index])) {
+          body.push(lines[index]);
+          index++;
+        }
+
+        if (body.length > 0) {
+          newline();
+          appendFencedCode(pre, body.join('\n'), fence[3]);
+        }
+
+        if (index < lines.length) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-fence', lines[index]));
+          index++;
+        }
+
+        continue;
+      }
+
+      // Display mathematics: the delimiters and everything between them.
+      if (SRC.mathFence.test(raw)) {
+        newline();
+        pre.appendChild(srcSpan('mdp-s-math', raw));
+        index++;
+
+        while (index < lines.length && !SRC.mathFence.test(lines[index])) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-math', lines[index]));
+          index++;
+        }
+
+        if (index < lines.length) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-math', lines[index]));
+          index++;
+        }
+
+        continue;
+      }
+
+      // A table is a run of pipe rows. Which row is the heading is only
+      // knowable from the alignment row underneath it, so the whole run is
+      // measured before any of it is drawn.
+      if (SRC.tableRow.test(raw)) {
+        var start = index;
+        var stop = index;
+        while (stop < lines.length && SRC.tableRow.test(lines[stop])) { stop++; }
+
+        var ruleAt = -1;
+        for (var scan = start; scan < stop; scan++) {
+          if (SRC.tableRule.test(lines[scan])) { ruleAt = scan; break; }
+        }
+
+        for (var row = start; row < stop; row++) {
+          newline();
+          if (row === ruleAt) {
+            pre.appendChild(srcSpan('mdp-s-table-rule', lines[row]));
+          } else {
+            appendTableRow(pre, lines[row], ruleAt > start && row === ruleAt - 1);
+          }
+        }
+
+        index = stop;
+        continue;
+      }
+
+      newline();
+
+      if (SRC.heading.test(raw)) {
+        pre.appendChild(srcSpan('mdp-s-heading', raw));
+        index++;
+        continue;
+      }
+
+      if (SRC.rule.test(raw)) {
+        pre.appendChild(srcSpan('mdp-s-rule', raw));
+        index++;
+        continue;
+      }
+
+      var quote = raw.match(SRC.quote);
+      if (quote) {
+        pre.appendChild(srcSpan('mdp-s-quote', quote[1]));
+        appendSourceInline(pre, quote[2]);
+        index++;
+        continue;
+      }
+
+      var list = raw.match(SRC.list);
+      if (list) {
+        if (list[1]) { pre.appendChild(document.createTextNode(list[1])); }
+        pre.appendChild(srcSpan('mdp-s-list', list[2]));
+        pre.appendChild(document.createTextNode(list[3]));
+        appendSourceInline(pre, raw.slice(list[0].length));
+        index++;
+        continue;
+      }
+
+      appendSourceInline(pre, raw);
+      index++;
+    }
+  }
+
+  /*
+   * Paints the raw text. Text always goes in through textContent, so a file's
+   * own angle brackets are never parsed as markup on the way in; highlighting
+   * is layered on afterwards and is a nicety, never a failure.
    */
   function paintSource(source) {
     var pre = document.createElement('pre');
     pre.className = 'mdp-source';
 
-    var code = document.createElement('code');
-    code.textContent = source;
+    var highlight = state.highlightSource && source.length <= MAX_HIGHLIGHTED_SOURCE;
 
-    if (state.highlightSource && typeof window.hljs !== 'undefined') {
-      code.className = 'language-markdown';
-      try { window.hljs.highlightElement(code); }
-      catch (_) { /* the unhighlighted text stands */ }
+    if (highlight) {
+      try { highlightSourceInto(pre, source); }
+      catch (_) {
+        pre.textContent = source;   // a tokeniser bug must not blank the view
+      }
+    } else {
+      pre.textContent = source;
     }
 
-    pre.appendChild(code);
     content.textContent = '';
     content.appendChild(pre);
   }

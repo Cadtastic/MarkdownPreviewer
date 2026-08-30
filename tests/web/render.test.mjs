@@ -736,12 +736,12 @@ ok('raw HTML in the file is shown as text, not parsed',
 // Highlighting is off by default and is its own option.
 ok('highlighting is unchecked by default', sourceHighlight.checked === false);
 ok('unhighlighted source has no token markup',
-   c.querySelector('pre.mdp-source code').children.length === 0);
+   c.querySelector('pre.mdp-source').children.length === 0);
 
 sourceHighlight.checked = true;
 sourceHighlight.dispatchEvent(new window.Event('change', { bubbles: true }));
 ok('turning it on colours the source',
-   c.querySelector('pre.mdp-source code').children.length > 0);
+   c.querySelector('pre.mdp-source').children.length > 0);
 ok('and that choice persists too',
    window.localStorage.getItem('mdp.highlightSource') === '1');
 ok('the text still reads exactly as the file does',
@@ -750,7 +750,7 @@ ok('the text still reads exactly as the file does',
 sourceHighlight.checked = false;
 sourceHighlight.dispatchEvent(new window.Event('change', { bubbles: true }));
 ok('turning it off goes back to plain text',
-   c.querySelector('pre.mdp-source code').children.length === 0);
+   c.querySelector('pre.mdp-source').children.length === 0);
 
 // Controls that mean nothing against raw text say so rather than sitting there
 // enabled.
@@ -779,6 +779,97 @@ ok('toggling off restores the rendered document',
    !c.querySelector('pre.mdp-source') && !!c.querySelector('h1'));
 ok('and the choice is persisted', window.localStorage.getItem('mdp.viewSource') === '0');
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== source highlighting: what each part is coloured as ==');
+// highlight.js's markdown grammar answers none of these, which is why the
+// source view tokenises the file itself.
+const srcToggle = window.document.getElementById('view-source');
+const srcHl = window.document.getElementById('source-highlight');
+
+if (srcToggle.getAttribute('aria-pressed') !== 'true') {
+  srcToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+}
+srcHl.checked = true;
+srcHl.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+const cls = (sel) => [...c.querySelectorAll('pre.mdp-source ' + sel)];
+const textsOf = (sel) => cls(sel).map(e => e.textContent);
+
+// Front matter: one colour end to end, keys bold within it.
+c = render('---\ntitle: Kitchen sink\nauthor: Addam\ntags: [a, b]\n---\n\n# After\n');
+ok('every front-matter part shares one class',
+   cls('.mdp-s-front').length >= 4, String(cls('.mdp-s-front').length));
+ok('the delimiters are part of it',
+   textsOf('.mdp-s-front').includes('---'), JSON.stringify(textsOf('.mdp-s-front')));
+ok('keys are marked for bolding',
+   textsOf('.mdp-s-key').join('|') === 'title:|author:|tags:',
+   JSON.stringify(textsOf('.mdp-s-key')));
+ok('every key is also a front-matter token, not a second colour',
+   cls('.mdp-s-key').every(e => e.classList.contains('mdp-s-front')));
+ok('content after the front matter is not swept into it',
+   cls('.mdp-s-heading').length === 1);
+
+// Fences: both markers one colour, and the body in the language named.
+c = render('```csharp\nvar x = 1;\n```\n');
+ok('opening and closing fences share a class',
+   textsOf('.mdp-s-fence').length === 2, JSON.stringify(textsOf('.mdp-s-fence')));
+ok('the language tag rides with the opening fence',
+   textsOf('.mdp-s-fence')[0] === '```csharp', JSON.stringify(textsOf('.mdp-s-fence')));
+ok('the body is handed to highlight.js under that language',
+   !!c.querySelector('pre.mdp-source code.language-csharp'));
+ok('and really was highlighted, not just labelled',
+   c.querySelector('pre.mdp-source code.language-csharp').children.length > 0);
+
+c = render('```\nplain text\n```\n');
+ok('a fence with no language leaves its body alone',
+   c.querySelector('pre.mdp-source code.mdp-s-codeblock')?.children.length === 0);
+
+c = render('```notalanguage\nx\n```\n');
+ok('an unknown language is not guessed at',
+   c.querySelector('pre.mdp-source code')?.children.length === 0);
+
+// Tables: pipes and the alignment row one colour, heading row bold.
+c = render('| Component | Version |\n| --------- | ------- |\n| markdown-it | 14.3.0 |\n');
+ok('every pipe is a table rule',
+   textsOf('.mdp-s-table-rule').filter(t => t === '|').length === 6,
+   JSON.stringify(textsOf('.mdp-s-table-rule')));
+ok('the alignment row is the same colour as the pipes',
+   textsOf('.mdp-s-table-rule').some(t => t.includes('---')));
+ok('the heading cells are marked for bolding',
+   textsOf('.mdp-s-table-head').map(t => t.trim()).join('|') === 'Component|Version',
+   JSON.stringify(textsOf('.mdp-s-table-head')));
+ok('body cells are not bolded as headings',
+   !textsOf('.mdp-s-table-head').some(t => t.includes('markdown-it')));
+
+// Mathematics, display and inline.
+c = render('$$\n\\int_0^\\infty e^{-x}\n$$\n\nInline \\( a^2 \\) here.\n');
+ok('display math is coloured, delimiters included',
+   textsOf('.mdp-s-math').filter(t => t.trim() === '$$').length === 2,
+   JSON.stringify(textsOf('.mdp-s-math')));
+ok('the body between the delimiters is coloured too',
+   textsOf('.mdp-s-math').some(t => t.includes('int_0')));
+ok('escaped-paren inline math is picked up',
+   textsOf('.mdp-s-math').some(t => t.includes('a^2')),
+   JSON.stringify(textsOf('.mdp-s-math')));
+
+// A fence inside the file must not have its contents read as Markdown.
+c = render('```md\n# not a heading\n```\n\n# a real heading\n');
+ok('a heading inside a fence is not treated as a heading',
+   textsOf('.mdp-s-heading').length === 1 &&
+   textsOf('.mdp-s-heading')[0] === '# a real heading',
+   JSON.stringify(textsOf('.mdp-s-heading')));
+
+// Nothing may be lost or invented: the text still reads as the file does.
+const roundTrip = '---\nk: v\n---\n\n# H\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```js\nlet q = 1;\n```\n\n> quote\n\n- item\n';
+c = render(roundTrip);
+ok('the highlighted source is character-for-character the file',
+   c.querySelector('pre.mdp-source').textContent === roundTrip,
+   JSON.stringify(c.querySelector('pre.mdp-source').textContent));
+
+// Back to plain, and back out of source view for the sections that follow.
+srcHl.checked = false;
+srcHl.dispatchEvent(new window.Event('change', { bubbles: true }));
+srcToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 console.log('\n== expand preview width ==');
 const expandToggle = window.document.getElementById('expand-view');

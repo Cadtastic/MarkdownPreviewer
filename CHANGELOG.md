@@ -28,6 +28,25 @@ leaving the pane.
   trust — disable themselves and say that source view is the reason, rather
   than blaming the document.
 
+  The highlighting is the previewer's own, not highlight.js's Markdown
+  grammar, which answered none of the questions a reader of raw Markdown
+  actually has. Front matter is one colour end to end, delimiters included,
+  with its keys picked out by weight rather than a second colour. A fence and
+  its closing partner match, language tag included, and the body between them
+  is handed to highlight.js under the language the fence declares — so a
+  ```csharp block reads as C#, not as Markdown. Table pipes and the alignment
+  row share one colour and the heading row is bold. Mathematics is coloured,
+  display and inline, delimiters and all.
+
+  Every colour is a palette token the chrome already uses, so all seven themes
+  are covered without a single new value and a theme added later inherits it.
+  Measured against each theme's own source background, the weakest token comes
+  in at 4.57:1 — above the 4.5:1 needed for body text everywhere. Two things
+  that measurement caught: the block now sets its own text colour instead of
+  inheriting one this stylesheet does not own, which the weight-only tokens
+  depended on; and front matter, HTML, quotes and rules moved off the
+  chrome-label grey, which reads at 4.1:1 on the lighter palettes.
+
 - **Expand the preview to the full pane width.** A toggle in the view controls
   gives the document every pixel the pane has: the centred reading measure goes
   and the reading gutter shrinks. Toggling back restores the previous width

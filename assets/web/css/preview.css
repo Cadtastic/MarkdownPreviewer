@@ -510,6 +510,7 @@ body {
  */
 .markdown-body pre.mdp-source {
   margin: 0;
+  color: var(--ink);
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -524,6 +525,57 @@ body {
   background: none;
   font-size: calc(12px * var(--mdp-font-scale));
   line-height: 1.55;
+}
+
+/*
+ * Source token colours.
+ *
+ * Every one is a palette token the chrome already uses, never a literal. Those
+ * tokens are defined per theme against that theme's own surfaces, so this
+ * colours correctly in all seven — and a theme added later inherits it without
+ * anyone remembering to come back here.
+ *
+ * Weight carries the meaning the brief asked for: keys and table headings are
+ * bold whatever colour they sit in.
+ */
+
+/* Front matter is one colour end to end, delimiters included. */
+.markdown-body pre.mdp-source .mdp-s-front { color: var(--ink-2); }
+
+/* ...with keys picked out by weight rather than by a second colour. */
+.markdown-body pre.mdp-source .mdp-s-key { font-weight: 700; }
+
+.markdown-body pre.mdp-source .mdp-s-heading {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Opening and closing fences match, language tag included. */
+.markdown-body pre.mdp-source .mdp-s-fence { color: var(--good); }
+
+/* Both kinds of table rule — the pipes and the alignment row — are one colour. */
+.markdown-body pre.mdp-source .mdp-s-table-rule { color: var(--accent); }
+.markdown-body pre.mdp-source .mdp-s-table-head { font-weight: 700; }
+
+.markdown-body pre.mdp-source .mdp-s-math { color: var(--warn); }
+.markdown-body pre.mdp-source .mdp-s-code { color: var(--crit); }
+.markdown-body pre.mdp-source .mdp-s-link,
+.markdown-body pre.mdp-source .mdp-s-autolink { color: var(--accent); }
+.markdown-body pre.mdp-source .mdp-s-html { color: var(--ink-2); }
+.markdown-body pre.mdp-source .mdp-s-list { color: var(--warn); font-weight: 700; }
+.markdown-body pre.mdp-source .mdp-s-quote { color: var(--ink-2); }
+.markdown-body pre.mdp-source .mdp-s-rule { color: var(--ink-2); }
+.markdown-body pre.mdp-source .mdp-s-strong { font-weight: 700; }
+.markdown-body pre.mdp-source .mdp-s-em { font-style: italic; }
+
+/* The body of a fenced block is highlight.js's, under the language the fence
+   named, and it brings its own theme — the same one the rendered view uses. */
+.markdown-body pre.mdp-source code.mdp-s-codeblock {
+  display: inline;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
 }
 
 /* An option that only bites in one mode should look inert in the other. */
