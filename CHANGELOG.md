@@ -13,6 +13,13 @@ leaving the pane.
 
 ### Added
 
+- **Expand the preview to the full pane width.** A toggle in the options row
+  drops the document's centred reading measure so it fills the pane edge to
+  edge, which is what a wide table or a large diagram wants; toggling back
+  restores the previous width exactly. The width has one definition, in the
+  stylesheet, so there is no second copy to drift out of step. The glyph shows
+  which way the next click goes, and the choice persists across documents.
+
 - **Editable task checkboxes.** A toggle in the toolbar's options row makes GFM
   task lists clickable. Checking or unchecking a box writes the change to the
   file immediately, with no prompt and no confirmation — the toggle's tooltip is
@@ -98,6 +105,28 @@ leaving the pane.
 
 ### Changed
 
+- **Tooltips are part of the document, not the operating system.** The native
+  `title` could not take the theme, broke lines wherever it liked, and waited
+  on a delay outside our control — which showed most on the checkbox toggle,
+  whose disclosure ran to a single unbroken sentence. Every toolbar control now
+  uses a themed tooltip drawn from the same palette tokens as the rest of the
+  chrome, with a label on the first line and the detail beneath it. Keyboard
+  focus raises them as well as hover, and `Esc` dismisses them.
+
+- **Previous/next match moved inside the search field**, as a split pair at its
+  right edge beside the match count, and they appear only when there are at
+  least two matches — with one there is no "next" to reach, and with none they
+  were two dead controls. The field reserves exactly as much room as the count
+  and buttons occupy, so a long count like `1/1247` can never slide underneath
+  them.
+
+- **Checkbox editing is remembered per document rather than per user**, under
+  `HKCU\Software\MarkdownPreviewer\TaskEditDocuments`. The answer genuinely
+  differs by file: a personal checklist is one to tick straight from the
+  preview, a README you are only reading is one to leave alone. The toggle also
+  stays disabled — and says which reason applies — for a document with no task
+  list in it at all, as well as for one with no file behind it.
+
 - **The toolbar is visible by default.** It is the only way to reach search,
   the contents rail, the theme selector and the trust toggle, so a document no
   longer opens with all of that hidden behind `Ctrl+F`. `Esc` or the `×` still
@@ -119,6 +148,15 @@ leaving the pane.
   one icon rotated rather than two glyphs swapped.
 
 ### Fixed
+
+- **The uninstaller now removes the per-user registry tree.** It deliberately
+  left `HKCU\Software\MarkdownPreviewer` behind so a reinstall would inherit
+  settings, which was unnecessary — upgrades install straight over the top and
+  never uninstall first — and that key is where the document lists live: the
+  paths of every file trusted for remote content and every file with checkbox
+  editing turned on. A record of what was opened is not a preference worth
+  surviving an uninstall. It reaches the account running the uninstaller;
+  other users on the same machine keep their own copy until they remove it.
 
 - **Clicking any in-page anchor silently killed the page's voice.** The host
   accepts messages only from its own render page, but the comparison demanded

@@ -629,9 +629,22 @@ Section "Uninstall"
 
   ; ── Registry ──────────────────────────────────────────────────────────────
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
-  ; Machine-wide settings go; per-user preferences under HKCU are deliberately
-  ; left alone so a reinstall keeps them.
   DeleteRegKey HKLM "${SETTINGS_KEY}"
+
+  ; The per-user tree goes too, and DeleteRegKey takes its subkeys with it —
+  ; which matters, because that is where the document lists live: the paths of
+  ; every file trusted for remote content and every file with checkbox editing
+  ; turned on. Those are a record of what this user opened, not a preference
+  ; worth surviving an uninstall. (An earlier build kept HKCU so a reinstall
+  ; would inherit settings; unnecessary, since upgrades install straight over
+  ; the top and never uninstall first.)
+  ;
+  ; Reaches only the account running the uninstaller. On a machine where
+  ; several people used the handler, each other user keeps their own copy under
+  ; their own hive until they remove it themselves — enumerating HKEY_USERS to
+  ; chase them would mean writing to loaded hives of accounts that are not
+  ; signed in, which is worse than leaving a settings key behind.
+  DeleteRegKey HKCU "${SETTINGS_KEY}"
 
   ; ── Cached browser profile ────────────────────────────────────────────────
   ; Ours alone — created by WebView2EnvironmentProvider under our own folder.

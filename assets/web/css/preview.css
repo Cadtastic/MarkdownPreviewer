@@ -221,11 +221,34 @@ body {
   width: calc(var(--mdp-toc-width) - var(--mdp-toolbar-pad));
 }
 
-.mdp-toolbar-row input[type="text"] {
+/* The field and the controls that live inside it. The wrapper carries the
+   sizing the input used to; the input fills it and reserves room on the right
+   so text can never slide under the count or the cycle buttons. */
+.mdp-find-field {
+  position: relative;
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   min-width: 0;
   max-width: 360px;
+}
+
+.mdp-find-actions {
+  position: absolute;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;   /* the gap between controls stays the input's */
+}
+.mdp-find-actions > * { pointer-events: auto; }
+
+.mdp-toolbar-row input[type="text"] {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   padding: 3px 8px;
+  padding-right: var(--mdp-find-actions-width, 52px);
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--surface);
@@ -244,12 +267,57 @@ body {
 }
 
 .mdp-find-count {
-  min-width: 44px;
-  text-align: center;
+  text-align: right;
   color: var(--muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
+
+/*
+ * Previous/next as one split control: a hairline between two halves, hung
+ * inside the field's right edge. Hidden outright below two matches — one match
+ * has no next, none has nothing — so the field is uncluttered in the state it
+ * spends most of its time in.
+ */
+.mdp-find-cycle {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
+.mdp-find-cycle[hidden] {
+  display: none;
+}
+
+.mdp-find-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0 1px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.mdp-find-step + .mdp-find-step {
+  border-left: 1px solid var(--line);
+}
+.mdp-find-step:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mdp-find-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mdp-icon-sm { width: 20px; height: 20px; }
 
 .mdp-toolbar-button {
   display: inline-flex;
@@ -409,6 +477,31 @@ body {
 .mdp-linkmode-toggle[aria-pressed="true"] .mdp-lm-locate { display: none; }
 .mdp-linkmode-toggle[aria-pressed="false"] .mdp-lm-app { display: none; }
 
+/* --- expand toggle -------------------------------------------------------------- */
+
+/*
+ * Two directions rather than on/off: the glyph shows where the next click
+ * takes the document, out to the pane's edges or back to the reading measure.
+ */
+.mdp-expand-toggle[aria-pressed="true"] .mdp-ex-out { display: none; }
+.mdp-expand-toggle[aria-pressed="false"] .mdp-ex-in { display: none; }
+.mdp-expand-toggle[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+
+/*
+ * Expanded: the document gives up its centred reading measure and fills the
+ * pane. The 980px cap is the default rather than a hard-coded literal down
+ * here, so restoring is a matter of dropping this class - there is no second
+ * copy of the width to keep in step.
+ */
+.markdown-body.mdp-expanded {
+  max-width: none;
+}
+
 /* --- task edit toggle ----------------------------------------------------------- */
 
 /* A true on/off toggle (unlike the link-mode switch): lit while checkboxes are
@@ -462,6 +555,54 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* --- tooltips ------------------------------------------------------------------- */
+
+/*
+ * A themed replacement for `title`. The native one cannot take the palette,
+ * breaks lines wherever it likes, and waits on the OS delay; this one is a
+ * single element the script moves and fills from the control's data-mdp-tip.
+ *
+ * Newlines in that attribute are honoured (pre-line), so a tooltip can put its
+ * shortcut or its caveat on its own line instead of running on.
+ */
+.mdp-tip {
+  position: fixed;
+  z-index: 30;
+  /* Sized by its own text, not by whatever space happens to be free to the
+     right of it. Without this the box shrink-to-fits against the containing
+     block and, when that measures small, wraps to one word per line. */
+  width: max-content;
+  max-width: 280px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font: 11px/1.45 "Segoe UI", system-ui, sans-serif;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
+.mdp-tip[hidden] {
+  display: none;
+}
+.mdp-tip.mdp-tip-shown {
+  opacity: 1;
+}
+
+/* The first line carries the label, anything after it the detail. */
+.mdp-tip b {
+  display: block;
+  font-weight: 600;
+}
+.mdp-tip span {
+  display: block;
+  color: var(--muted);
 }
 
 /* --- trust dialog ------------------------------------------------------------- */

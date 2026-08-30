@@ -5,7 +5,8 @@
  *
  *   host -> page  { kind: "render", token, markdown, theme, docBase, settings,
  *                                     documentGeneration, documentName,
- *                                     trusted, trustable, taskEditable }
+ *                                     trusted, trustable, taskEditable,
+ *                                     taskEditOn }
  *   host -> page  { kind: "theme",  theme }
  *   host -> page  { kind: "settings", settings }
  *
@@ -16,6 +17,7 @@
  *   page -> host  { kind: "trustDocument", trusted }
  *   page -> host  { kind: "openDocument", url, mode }   mode: "navigate" | "app"
  *   page -> host  { kind: "toggleTask", line, checked }
+ *   page -> host  { kind: "setTaskEdit", enabled }
  *
  * Design notes worth knowing before editing:
  *
@@ -60,8 +62,10 @@
     documentName: '',         // shown in the trust dialog so it can name its subject
     documentGeneration: 0,    // changes only when the reader moves to another file
     linkMode: 'navigate',     // where local links go: 'navigate' Explorer, or 'app'ly default app
-    editTasks: false,         // the reader turned checkbox editing on
+    editTasks: false,         // the reader turned checkbox editing on for THIS document
     taskEditable: false,      // ...and this document has a file that can take the edit
+    hasTasks: false,          // ...and there is at least one checkbox to edit
+    expanded: false,          // document fills the pane instead of its reading measure
     bodyLine: 0,              // source line the rendered body starts on (after front matter)
     trusted: false,           // this document may load resources from the internet
     trustable: false          // ...and it has a path to record that grant against
@@ -577,7 +581,9 @@
 
     if (toggle) {
       toggle.disabled = !eligible;
-      toggle.title = eligible ? '' : 'This document has fewer than two headings';
+      setTip(toggle, eligible
+        ? 'Contents\nJump to a heading.'
+        : 'Contents\nThis document has fewer than two headings.');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.classList.toggle('mdp-active', open);
     }
@@ -610,11 +616,11 @@
 
     trust.toggle.setAttribute('aria-pressed', state.trusted ? 'true' : 'false');
     trust.toggle.disabled = !state.trustable;
-    trust.toggle.title = !state.trustable
-      ? 'This item has no file on disk, so it cannot be trusted'
+    setTip(trust.toggle, !state.trustable
+      ? 'Trust external links\nThis item has no file on disk to trust.'
       : state.trusted
-        ? 'Trusted — external links are allowed. Click to stop allowing them.'
-        : 'Trust external links';
+        ? 'External links are trusted\nImages from the internet load for this file.'
+        : 'Trust external links\nAllow this file to load images from the internet.');
   }
 
   function openTrustDialog() {
@@ -647,6 +653,147 @@
     post({ kind: 'trustDocument', trusted: state.trusted });
   }
 
+  // ---------------------------------------------------------------- tooltips ---
+
+  /*
+   * One tooltip element, filled and positioned from whichever control the
+   * pointer or the keyboard is on. The native `title` was doing this job badly:
+   * it renders in the OS's colours rather than the document's theme, it wraps
+   * where it likes, and it waits on a delay we do not control.
+   *
+   * The text convention is a label on the first line and the detail on the
+   * rest, split on the newline in data-mdp-tip. Keyboard focus shows it too, so
+   * the explanation is not mouse-only.
+   */
+  var TIP_DELAY_MS = 350;
+
+  var tip = {
+    el: document.getElementById('mdp-tip'),
+    timer: 0,
+    target: null
+  };
+
+  /* Sets the tooltip text of a control, refreshing it if it is on screen. */
+  function setTip(element, text) {
+    if (!element) { return; }
+
+    element.setAttribute('data-mdp-tip', text || '');
+    element.setAttribute('aria-label', String(text || '').replace(/\n+/g, ' — '));
+
+    if (tip.target === element) { fillTip(text); positionTip(element); }
+  }
+
+  function fillTip(text) {
+    if (!tip.el) { return; }
+
+    var lines = String(text || '').split('\n');
+    tip.el.textContent = '';
+
+    var label = document.createElement('b');
+    label.textContent = lines[0];
+    tip.el.appendChild(label);
+
+    if (lines.length > 1) {
+      var detail = document.createElement('span');
+      detail.textContent = lines.slice(1).join('\n');
+      tip.el.appendChild(detail);
+    }
+  }
+
+  /*
+   * Below the control, nudged left when it would overhang the pane. Fixed
+   * positioning keeps it out of the document's scroll, so it never drags a
+   * scrollbar into existence.
+   */
+  function positionTip(element) {
+    if (!tip.el) { return; }
+
+    var anchor = element.getBoundingClientRect();
+
+    // Measure from a neutral origin. Left where the last anchor put it, a
+    // tooltip pressed against an edge wraps differently, and positioning from
+    // that distorted box throws it off screen entirely.
+    tip.el.style.left = '0px';
+    tip.el.style.top = '0px';
+
+    var box = tip.el.getBoundingClientRect();
+    var margin = 6;
+
+    // Both fall back, and both are checked for zero: a viewport of no size is
+    // not a viewport with no room in it. Clamping against zero would pin every
+    // tooltip to the left margin and flip every one of them above its control.
+    var viewWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    var viewHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+    var left = anchor.left + (anchor.width / 2) - (box.width / 2);
+    if (viewWidth > 0) {
+      left = Math.min(left, viewWidth - box.width - margin);
+    }
+    left = Math.max(margin, left);
+
+    var top = anchor.bottom + 6;
+    if (viewHeight > 0 && top + box.height > viewHeight - margin) {
+      top = anchor.top - box.height - 6;   // flip above rather than run off
+    }
+
+    tip.el.style.left = Math.round(left) + 'px';
+    tip.el.style.top = Math.round(top) + 'px';
+  }
+
+  function showTip(element) {
+    var text = element.getAttribute('data-mdp-tip');
+    if (!tip.el || !text) { return; }
+
+    tip.target = element;
+    fillTip(text);
+    tip.el.hidden = false;
+    positionTip(element);           // measured only once it is laid out
+    tip.el.classList.add('mdp-tip-shown');
+  }
+
+  function hideTip() {
+    window.clearTimeout(tip.timer);
+    tip.target = null;
+
+    if (tip.el) {
+      tip.el.classList.remove('mdp-tip-shown');
+      tip.el.hidden = true;
+    }
+  }
+
+  function scheduleTip(element) {
+    window.clearTimeout(tip.timer);
+    tip.timer = window.setTimeout(function () { showTip(element); }, TIP_DELAY_MS);
+  }
+
+  /* Delegated, so controls created after startup are covered too. */
+  function tipTargetFor(node) {
+    return node && node.closest ? node.closest('[data-mdp-tip]') : null;
+  }
+
+  document.addEventListener('mouseover', function (event) {
+    var target = tipTargetFor(event.target);
+    if (target === tip.target) { return; }
+
+    hideTip();
+    if (target) { scheduleTip(target); }
+  });
+
+  document.addEventListener('mouseout', function (event) {
+    if (tipTargetFor(event.target)) { hideTip(); }
+  });
+
+  // A tooltip that survives its own control being clicked would sit over the
+  // thing the reader just acted on.
+  document.addEventListener('mousedown', hideTip, true);
+
+  document.addEventListener('focusin', function (event) {
+    var target = tipTargetFor(event.target);
+    hideTip();
+    if (target) { showTip(target); }
+  });
+  document.addEventListener('focusout', hideTip);
+
   // ----------------------------------------------------------- task editing ---
 
   /*
@@ -658,28 +805,22 @@
   var taskEdit = { toggle: document.getElementById('task-edit') };
 
   function taskEditingActive() {
-    return state.editTasks === true && state.taskEditable === true;
-  }
-
-  function readTaskEditPreference() {
-    try { return window.localStorage.getItem('mdp.editTasks') === '1'; }
-    catch (_) { return false; }
-  }
-
-  function storeTaskEditPreference() {
-    try { window.localStorage.setItem('mdp.editTasks', state.editTasks ? '1' : '0'); }
-    catch (_) { /* storage unavailable; the choice just will not persist */ }
+    return state.editTasks === true && state.taskEditable === true && state.hasTasks === true;
   }
 
   function syncTaskEditToggle() {
     if (taskEdit.toggle) {
-      taskEdit.toggle.setAttribute('aria-pressed', state.editTasks ? 'true' : 'false');
-      taskEdit.toggle.disabled = !state.taskEditable;
-      taskEdit.toggle.title = !state.taskEditable
-        ? 'This document cannot be edited from the preview'
-        : state.editTasks
-          ? 'Checkboxes are editable — checking or unchecking one saves the file immediately. Click to make them read-only.'
-          : 'Make checkboxes editable. Checking or unchecking one saves the file immediately, without asking.';
+      // Three different reasons the control can be unavailable, and the
+      // tooltip says which one applies rather than leaving a dead button.
+      var usable = state.taskEditable && state.hasTasks;
+
+      taskEdit.toggle.setAttribute('aria-pressed', taskEditingActive() ? 'true' : 'false');
+      taskEdit.toggle.disabled = !usable;
+      setTip(taskEdit.toggle,
+        !state.hasTasks ? 'Edit checkboxes\nThis document has no task list.'
+          : !state.taskEditable ? 'Edit checkboxes\nThis document has no file to save to.'
+            : state.editTasks ? 'Checkboxes are editable\nChanges save to the file straight away.'
+              : 'Edit checkboxes\nChanges save to the file straight away.');
     }
 
     syncTaskBoxes();
@@ -692,6 +833,42 @@
     for (var i = 0; i < boxes.length; i++) {
       boxes[i].disabled = !active;
     }
+  }
+
+  // ------------------------------------------------------------ expanded view ---
+
+  /*
+   * The document normally holds a centred reading measure (the 980px cap in
+   * preview.css) because long lines are hard to read. In a wide pane that
+   * leaves margins, and for a wide table or diagram they are wasted. Expanding
+   * drops the cap; collapsing restores it by removing the class, so the width
+   * has exactly one definition and cannot drift out of step with itself.
+   */
+  var expand = { toggle: document.getElementById('expand-view') };
+
+  function readExpandPreference() {
+    try { return window.localStorage.getItem('mdp.expanded') === '1'; }
+    catch (_) { return false; }
+  }
+
+  function storeExpandPreference() {
+    try { window.localStorage.setItem('mdp.expanded', state.expanded ? '1' : '0'); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function syncExpandToggle() {
+    content.classList.toggle('mdp-expanded', state.expanded === true);
+
+    if (expand.toggle) {
+      expand.toggle.setAttribute('aria-pressed', state.expanded ? 'true' : 'false');
+      setTip(expand.toggle, state.expanded
+        ? 'Restore preview width\nBack to the centred reading width.'
+        : 'Expand preview width\nFill the pane edge to edge.');
+    }
+
+    // A wider document moves every diagram and image, so any highlight boxes
+    // drawn over them are now in the wrong place.
+    rerunActiveFindSoon();
   }
 
   // -------------------------------------------------------- link destination ---
@@ -727,9 +904,9 @@
 
     var app = state.linkMode === 'app';
     linkMode.toggle.setAttribute('aria-pressed', app ? 'true' : 'false');
-    linkMode.toggle.title = app
-      ? 'Local links open in their default app. Click to reveal the file in File Explorer instead.'
-      : 'Local links reveal the file in File Explorer. Click to open in the default app instead.';
+    setTip(linkMode.toggle, app
+      ? 'Links open in the default app\nClick to reveal them in File Explorer instead.'
+      : 'Links reveal the file in File Explorer\nClick to open them in the default app instead.');
   }
 
   // ------------------------------------------------------------ find in page ---
@@ -831,6 +1008,35 @@
    * Every exit from runFind() goes through here, so the field can never be
    * left wearing a stale colour from the previous query.
    */
+  /*
+   * The cycle buttons are only meaningful with somewhere to cycle to: one match
+   * has no next, and none would leave two dead controls sitting in the field.
+   */
+  function syncFindCycle() {
+    var cycle = document.getElementById('find-cycle');
+    if (cycle) { cycle.hidden = find.marks.length < 2; }
+    measureFindActions();
+  }
+
+  /*
+   * The input reserves exactly as much room on its right as the count and
+   * buttons currently occupy, so a growing match count ("1/1247") can never end
+   * up underneath them.
+   */
+  function measureFindActions() {
+    var actions = document.querySelector('.mdp-find-actions');
+
+    // A zero here is ambiguous — nothing to reserve room for, or nothing laid
+    // out yet — so the toolbar's own height is what says whether measuring is
+    // meaningful. Reading the actions' width alone left the padding stuck at
+    // whatever the last non-empty query needed.
+    if (!actions || find.bar.offsetHeight === 0) { return; }
+
+    var width = actions.offsetWidth;
+    document.documentElement.style.setProperty(
+      '--mdp-find-actions-width', (width > 0 ? width + 8 : 8) + 'px');
+  }
+
   function setFindState(name) {
     find.bar.classList.toggle('mdp-find-hit', name === 'hit');
     find.bar.classList.toggle('mdp-find-miss', name === 'miss');
@@ -941,6 +1147,7 @@
     if (query.length === 0) {
       setFindState('');
       find.count.textContent = '';
+      syncFindCycle();
       return;
     }
 
@@ -949,6 +1156,7 @@
       // Only reachable in regex mode: the user is mid-pattern, or wrong.
       setFindState('invalid');
       find.count.textContent = 'bad pattern';
+      syncFindCycle();
       return;
     }
     setFindState('');
@@ -1042,6 +1250,8 @@
       setFindState('miss');
       find.count.textContent = '0/0';
     }
+
+    syncFindCycle();
   }
 
   function setCurrentMatch(index) {
@@ -1353,7 +1563,9 @@
     state.trusted = message.trusted === true;
     state.trustable = message.trustable === true;
     state.taskEditable = message.taskEditable === true;
-    syncTaskEditToggle();
+    // Per document, so the host is the authority; the page never carries one
+    // document's answer over to the next.
+    state.editTasks = message.taskEditOn === true;
     syncTrustToggle();
     closeTrustDialog();
 
@@ -1398,6 +1610,12 @@
       try { applyTaskLists(content); }
       catch (error) { warnings.push('Task lists: ' + error.message); }
     }
+
+    // Only knowable once the body is on screen, and it decides whether the
+    // edit toggle is a live control or a disabled one that says why.
+    state.hasTasks = content.querySelector('li.mdp-task') !== null;
+    syncTaskEditToggle();
+
     markBrokenImages(content);
     requestImageText();
 
@@ -1571,6 +1789,11 @@
       return;
     }
 
+    if (event.key === 'Escape' && tip.target) {
+      hideTip();
+      return;
+    }
+
     // Esc unwinds one layer at a time: the dialog if it is up, then the bar.
     if (event.key === 'Escape' && trust.dialog && !trust.dialog.hidden) {
       event.preventDefault();
@@ -1666,6 +1889,8 @@
 
   window.addEventListener('resize', function () {
     layoutChrome();
+    hideTip();              // anchored to a control that has just moved
+    measureFindActions();
 
     // Diagrams and images scale with the pane, so any overlay drawn over one
     // is now in the wrong place. Re-running is cheaper than tracking each box.
@@ -1716,14 +1941,27 @@
 
   // --- task editing -----------------------------------------------------------------
 
-  state.editTasks = readTaskEditPreference();
   syncTaskEditToggle();
 
   if (taskEdit.toggle) {
     taskEdit.toggle.addEventListener('click', function () {
       state.editTasks = !state.editTasks;
-      storeTaskEditPreference();
       syncTaskEditToggle();
+      // The host owns the answer per document; it comes back on the next render.
+      post({ kind: 'setTaskEdit', enabled: state.editTasks });
+    });
+  }
+
+  // --- expanded view ------------------------------------------------------------
+
+  state.expanded = readExpandPreference();
+  syncExpandToggle();
+
+  if (expand.toggle) {
+    expand.toggle.addEventListener('click', function () {
+      state.expanded = !state.expanded;
+      storeExpandPreference();
+      syncExpandToggle();
     });
   }
 

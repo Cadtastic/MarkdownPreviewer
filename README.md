@@ -46,6 +46,8 @@ does, but integrated where you already are.
   virtual host, never `file://`
 - **Tick things off** — a toolbar toggle makes task-list checkboxes clickable
   and saves the change straight to the file, one character at a time
+- **Room to read** — expand the document to the full pane width when a table or
+  diagram needs it, and collapse back to the reading measure when it does not
 - **Local links turn the page** — click `docs/architecture.md` in a README and
   Explorer navigates to that file and selects it, so the preview follows the
   link; a toolbar switch opens links in their default app instead
@@ -228,6 +230,14 @@ The previewer reads; it does not write — with one exception, behind a toggle i
 the toolbar's options row. Turn it on and GFM task lists become clickable, and
 a click saves immediately: no prompt, no confirmation, no notification. The
 tooltip says so before you turn it on.
+
+The choice is remembered per document, under
+`HKCU\Software\MarkdownPreviewer\TaskEditDocuments`, because it genuinely
+differs by file — a personal checklist is one to tick straight from the
+preview, a README you happen to be reading is one to leave alone. Turning it on
+for one file does not arm the next one you open. The toggle disables itself,
+and says which reason applies, for a document with no task list in it and for
+one with no file behind it.
 
 The write is as narrow as it can be made. Each click makes the host re-read the
 file from disk (never reconstruct it from the rendered page), decode it with its

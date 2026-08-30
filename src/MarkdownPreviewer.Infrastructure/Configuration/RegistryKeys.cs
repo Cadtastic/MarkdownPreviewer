@@ -32,6 +32,19 @@ public static class RegistryKeys
     /// </remarks>
     public const string TrustedDocumentsPath = UserSettingsPath + @"\TrustedDocuments";
 
+    /// <summary>
+    /// Per-user list of documents whose task checkboxes the reader made
+    /// editable.
+    /// </summary>
+    /// <remarks>
+    /// A sibling of <see cref="TrustedDocumentsPath"/> and kept for the same
+    /// reasons: HKCU only, one value per document named by full path, and
+    /// removed wholesale by the uninstaller along with the rest of the per-user
+    /// tree. Only documents that opted in appear here; turning editing off
+    /// deletes the value rather than storing a zero.
+    /// </remarks>
+    public const string TaskEditDocumentsPath = UserSettingsPath + @"\TaskEditDocuments";
+
     /// <summary>Where Windows records the light/dark preference for apps.</summary>
     public const string PersonalizePath =
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
