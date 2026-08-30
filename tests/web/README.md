@@ -23,6 +23,7 @@ npm test
 | Dangerous URL schemes | `javascript:`, `vbscript:`, `file:`, non-image `data:`. |
 | Raw HTML sanitiser | On by default, so it stands between every previewed file and the DOM. |
 | Find in page | Match counting, wrap-around cycling, highlight removal, and the exclusion of invisible `<style>`/`<svg>` text. |
+| Panel visibility | Whether the find bar and contents panel are *actually* hidden — computed display, not the `hidden` property. |
 | Table of contents | Built per render, collapse and hide states, and reshow via the host message. |
 | Host ↔ page protocol | Token echo, completion reporting, external-link routing. |
 | Theme switching | Stylesheets toggle via `media`, not the `disabled` attribute. |
@@ -39,6 +40,13 @@ preview died on the 30-second timeout. `host token N echoed verbatim` guards thi
 **Silent asset hangs.** A `<script>` that fires neither `load` nor `error` used to
 leave the render promise unsettled forever. `loadAsset` is now bounded, and
 `render still reports completion` proves a failed bundle degrades to a warning.
+
+**Asserting the attribute instead of the effect.** The suite used to check
+`element.hidden === true`, which was true throughout the life of issue #1 while
+both panels stayed on screen — author CSS was overriding the user-agent rule
+that `hidden` relies on. The suite now inlines `preview.css` into the jsdom
+document and asserts `getComputedStyle(el).display`, so the cascade is part of
+the test rather than an assumption. Reverting the fix turns five assertions red.
 
 **Counting text nobody can see.** Find walked every text node, including the
 `<style>` block a rendered mermaid diagram injects — so searching for "mermaid"
