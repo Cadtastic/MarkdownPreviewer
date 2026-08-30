@@ -5,6 +5,53 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-08-30
+
+The chrome grew up: one toolbar instead of floating panels, seven themes, and
+a search that can read pictures.
+
+### Added
+
+- **Seven themes.** System (follows the host's light/dark resolution, stock
+  GitHub palettes) plus six named palettes — Paper, Arctic and Ledger (light),
+  Harbor, Midnight and Carbon (dark) — that re-tint the document and the
+  chrome together from one seventeen-token contract. Picked from a selector at
+  the right edge of the toolbar's options row; the choice persists. Named
+  palettes carry their own lightness, so the Windows colour mode stops
+  mattering while one is active. Syntax colours inside code fences keep the
+  GitHub light/dark set matching the palette's lightness.
+- **Search reads pictures.** SVG images embedded with `<img>` — previously
+  opaque, since such an SVG is a separate document the page cannot see into —
+  now have their visible text extracted by the host (locked-down XML reader:
+  DTDs prohibited, style/script/defs skipped, size-capped, cached by
+  write-time) and matched like any other text. Every image's alt and title
+  text counts too. A match boxes the whole image and joins the cycle order.
+- The context menu's *Find…* and *Toggle table of contents* now open the
+  toolbar as a whole.
+
+### Changed
+
+- **One toolbar replaces the floating panels.** Search, its options row
+  (match case, whole word, regex, theme selector) and the Contents toggle live
+  in a fixed bar at the top; the document always starts below it. The contents
+  panel is now a rail docked under the toolbar on the right (it may hang over
+  the document — it is chrome the reader summoned), toggled from the toolbar,
+  disabled for documents with fewer than two headings. One `×` (or `Esc`)
+  closes everything. The find bar's drag grip, the separate close buttons and
+  the collapse-to-pill behaviour are gone with the panels they belonged to.
+- **The WebView2 profile is partitioned per host executable.** The
+  shared-browser compatibility check includes the host executable's identity,
+  so two different host programs (prevhost and Outlook's reading pane, or the
+  dev harness) could collide on one profile and fail with `0x8007139F`
+  regardless of the 1.1.0 retry. Explorer's prevhosts still share one browser;
+  different hosts can no longer collide at all.
+
+### Fixed
+
+- Searching while an image was still loading could box it at the wrong place;
+  overlays are repositioned when images finish loading and when the pane is
+  resized.
+
 ## [1.2.0] — 2026-08-30
 
 Search grew the switches people expect from an editor, and learned to look
@@ -180,6 +227,7 @@ Initial release.
 - NSIS installer with .NET and WebView2 prerequisite detection, plus
   registration, diagnostic and Explorer-restart scripts.
 
+[1.3.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.2.0
 [1.1.1]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.0

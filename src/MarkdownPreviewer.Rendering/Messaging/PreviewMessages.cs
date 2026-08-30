@@ -23,6 +23,10 @@ internal sealed class HostToPageMessage
 
     [JsonPropertyName("settings")]
     public PageSettings? Settings { get; init; }
+
+    /// <summary>For kind "imageText": the extracted text per image.</summary>
+    [JsonPropertyName("images")]
+    public ImageTextEntry[]? Images { get; init; }
 }
 
 /// <summary>
@@ -62,6 +66,9 @@ internal sealed class PageToHostMessage
     [JsonPropertyName("message")]     public string? Message { get; init; }
     [JsonPropertyName("url")]         public string? Url { get; init; }
     [JsonPropertyName("reason")]      public string? Reason { get; init; }
+
+    /// <summary>For kind "imageTextRequest": the images the page wants text for.</summary>
+    [JsonPropertyName("urls")]        public string[]? Urls { get; init; }
 }
 
 /// <summary>
@@ -78,6 +85,7 @@ internal sealed class PageToHostMessage
 [JsonSerializable(typeof(HostToPageMessage))]
 [JsonSerializable(typeof(PageToHostMessage))]
 [JsonSerializable(typeof(PageSettings))]
+[JsonSerializable(typeof(ImageTextEntry))]
 internal sealed partial class PreviewJsonContext : JsonSerializerContext
 {
 }

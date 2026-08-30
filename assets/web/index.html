@@ -42,46 +42,64 @@
   <link id="css-body-dark"  rel="stylesheet" href="css/github-markdown-dark.css"  media="not all" />
   <link id="css-code-light" rel="stylesheet" href="css/github.min.css"            media="all" />
   <link id="css-code-dark"  rel="stylesheet" href="css/github-dark.min.css"       media="not all" />
+  <link rel="stylesheet" href="css/themes.css" />
   <link rel="stylesheet" href="css/preview.css" />
 </head>
 <body>
   <div id="notice" class="notice" role="status" hidden></div>
 
-  <!-- Find-in-page bar: Ctrl+F (or the context menu) opens it, Enter/Shift+Enter
-       cycle matches, Esc or the close button hides it. Draggable by its grip.
-       Implemented in-page because the browser's own find UI is disabled along
-       with the rest of its accelerators. -->
-  <div id="find" class="mdp-find-bar" hidden>
-    <span id="find-grip" class="mdp-find-grip" title="Drag to move">⠿</span>
-    <input id="find-input" type="text" placeholder="Find" spellcheck="false"
-           autocomplete="off" aria-label="Find in preview" />
-    <span id="find-count" class="mdp-find-count"></span>
-    <button id="find-prev" class="mdp-find-button" type="button" title="Previous match (Shift+Enter)">▲</button>
-    <button id="find-next" class="mdp-find-button" type="button" title="Next match (Enter)">▼</button>
-    <button id="find-options" class="mdp-find-button" type="button"
-            title="Search options" aria-expanded="false" aria-controls="find-opts">⚙</button>
-    <button id="find-close" class="mdp-find-button mdp-close-button" type="button" title="Close (Esc)">×</button>
+  <!-- The toolbar: search, its options row, the contents toggle, and the only
+       close button. Ctrl+F or the context menu shows it; the document always
+       starts below it (preview.js keeps --mdp-bar-offset equal to its height).
+       The contents rail docks below it on the right and may hang over the
+       document by design. -->
+  <div id="toolbar" class="mdp-toolbar" hidden>
+    <div class="mdp-toolbar-row">
+      <input id="find-input" type="text" placeholder="Find" spellcheck="false"
+             autocomplete="off" aria-label="Find in preview" />
+      <span id="find-count" class="mdp-find-count"></span>
+      <button id="find-prev" class="mdp-toolbar-button" type="button" title="Previous match (Shift+Enter)">▲</button>
+      <button id="find-next" class="mdp-toolbar-button" type="button" title="Next match (Enter)">▼</button>
+      <button id="find-options" class="mdp-toolbar-button" type="button"
+              title="Search options" aria-expanded="false" aria-controls="find-opts">⚙</button>
+      <span class="mdp-toolbar-divider"></span>
+      <button id="toc-toggle" class="mdp-toolbar-button mdp-toc-toggle" type="button"
+              aria-expanded="false">Contents <span id="toc-chevron" class="mdp-toc-chevron">▾</span></button>
+      <span class="mdp-toolbar-divider"></span>
+      <button id="toolbar-close" class="mdp-toolbar-button mdp-close-button" type="button"
+              title="Close (Esc)">×</button>
+    </div>
 
-    <!-- Independent toggles; any combination is valid. Inside the bar so it
-         travels with it when dragged. -->
-    <div id="find-opts" class="mdp-find-options" hidden>
+    <!-- Search options: a real row, so the states stay readable while set. The
+         theme selector sits at its right edge; the whole toolbar spans the
+         pane, so the contents rail (which starts BELOW the bar) can never
+         cover it. -->
+    <div id="find-opts" class="mdp-toolbar-options" hidden>
       <label><input type="checkbox" id="find-case" /> Match case</label>
       <label><input type="checkbox" id="find-word" /> Match whole word</label>
       <label title="Combines with the others. With whole word the pattern is wrapped as \b(?:pattern)\b, so one starting or ending with a non-word character will not match."><input type="checkbox" id="find-regex" /> Regular expression</label>
+      <span class="mdp-toolbar-spacer"></span>
+      <label class="mdp-theme-label">Theme
+        <select id="theme-select" aria-label="Colour theme">
+          <option value="system">System</option>
+          <optgroup label="Light">
+            <option value="paper">Paper</option>
+            <option value="arctic">Arctic</option>
+            <option value="ledger">Ledger</option>
+          </optgroup>
+          <optgroup label="Dark">
+            <option value="harbor">Harbor</option>
+            <option value="midnight">Midnight</option>
+            <option value="carbon">Carbon</option>
+          </optgroup>
+        </select>
+      </label>
     </div>
   </div>
 
-  <!-- Floating table of contents; populated per render. The chevron (or the
-       header itself) collapses it to a pill, the × hides it entirely, and the
-       host's context-menu entry brings it back. Hidden for documents with
-       fewer than two headings. -->
+  <!-- Contents rail: docked under the toolbar along the right edge, populated
+       per render. Toggled from the toolbar; no close button of its own. -->
   <aside id="toc" class="mdp-toc" hidden>
-    <div id="toc-header" class="mdp-toc-header">
-      <button id="toc-collapse" class="mdp-toc-collapse" type="button"
-              title="Collapse" aria-expanded="true">▾</button>
-      <span class="mdp-toc-title">Contents</span>
-      <button id="toc-hide" class="mdp-toc-hide mdp-close-button" type="button" title="Hide (right-click the page to show again)">×</button>
-    </div>
     <nav id="toc-list" class="mdp-toc-list"></nav>
   </aside>
 

@@ -13,9 +13,9 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  /* Matches github-markdown-css light/dark canvas so there is no flash of
-     white when the preview pane is dark. */
-  background: var(--mdp-canvas, transparent);
+  /* The theme's ground tone; over-scroll and the strip beside a narrow
+     document match the palette instead of flashing white. */
+  background: var(--ground, transparent);
 }
 
 body {
@@ -125,84 +125,107 @@ mjx-container[jax="SVG"][display="true"] {
   opacity: 0.7;
 }
 
-/* --- find in page ---------------------------------------------------------- */
+/* --- toolbar ---------------------------------------------------------------- */
 
-.mdp-find-bar {
+/*
+ * The document is never allowed under the toolbar: preview.js measures the
+ * bar (one row, or two with the options row open) into --mdp-bar-offset, and
+ * the body is padded by it. The contents rail hangs below the same offset.
+ */
+body {
+  padding-top: var(--mdp-bar-offset, 0px);
+}
+
+.mdp-toolbar {
   position: fixed;
-  top: 12px;
-  left: 16px;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 11;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
-  background: var(--mdp-canvas, Canvas);
-  color: var(--mdp-ink, CanvasText);
+  background: var(--surface-2);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
   font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow);
 }
 
 /*
- * `hidden` has to beat the panel's own `display`, and this rule must stay
- * BELOW it.
+ * `hidden` has to beat the panel's own `display`, and these rules must stay
+ * BELOW the rules they override.
  *
  * The HTML `hidden` attribute hides an element through the user-agent rule
- * `[hidden] { display: none }`. Author declarations outrank user-agent ones
- * however weak their specificity, so a bare `display: flex` here silently
- * defeats `hidden`: the attribute stays set, the property reads true, and the
- * element renders anyway. That shipped in 1.1.0 as issue #1 — the find bar was
+ * `[hidden] { display: none }`, and author declarations outrank user-agent
+ * ones however weak their specificity - a bare `display` here would silently
+ * defeat `hidden`. That shipped in 1.1.0 as issue #1: the find bar was
  * visible on every document and its close button appeared to do nothing.
- *
- * Ordering matters as much as specificity: a real browser would honour this
- * rule anywhere in the file, but simplified cascades (jsdom, which the render
- * tests run on) take the last match. Below the panel, it is correct in both.
+ * Ordering matters as much as specificity: a real browser honours these
+ * anywhere in the file, but simplified cascades (jsdom, which the render
+ * tests run on) take the last match.
  */
-.mdp-find-bar[hidden] {
+.mdp-toolbar[hidden] {
   display: none;
 }
 
-.mdp-find-bar input {
-  width: 180px;
-  padding: 3px 6px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
-  border-radius: 4px;
-  background: transparent;
+.mdp-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+}
+
+.mdp-toolbar-row input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 360px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
   color: inherit;
   font: inherit;
   outline: none;
 }
-.mdp-find-bar input:focus {
-  border-color: rgba(9, 105, 218, 0.7);
+.mdp-toolbar-row input[type="text"]:focus {
+  border-color: var(--accent);
 }
 
 .mdp-find-count {
   min-width: 44px;
   text-align: center;
-  opacity: 0.75;
+  color: var(--muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.mdp-find-button {
+.mdp-toolbar-button {
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   line-height: 1;
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 4px 7px;
+  border-radius: 5px;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.72;
 }
-.mdp-find-button:hover {
+.mdp-toolbar-button:hover {
   opacity: 1;
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--accent-soft);
+}
+.mdp-toolbar-button.mdp-active {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mdp-toolbar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: inherit;
 }
 
-/* The close buttons on both panels are deliberately larger than their
-   neighbours: they are the controls people reach for in a hurry, and at the
-   size of the cycle arrows they were an easy thing to miss. */
+/* The close button is what people reach for in a hurry; keep it the largest
+   control in the row. */
 .mdp-close-button {
   font-size: 17px;
   padding: 2px 9px;
@@ -210,84 +233,77 @@ mjx-container[jax="SVG"][display="true"] {
 }
 .mdp-close-button:hover { opacity: 1; }
 
-/* Gear: lit while its panel is open, so the bar shows the panel's state. */
-.mdp-find-button.mdp-active {
-  opacity: 1;
-  background: rgba(128, 128, 128, 0.28);
+.mdp-toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 0 2px;
 }
 
-/* Search options. Anchored under the bar, which is `position: fixed` and so is
-   the containing block -- the panel travels with the bar when it is dragged. */
-.mdp-find-options {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
+.mdp-toolbar-spacer { flex: 1 1 auto; }
+
+.mdp-toc-toggle { white-space: nowrap; }
+.mdp-toc-chevron { font-size: 10px; opacity: 0.8; }
+
+/* --- search options row ------------------------------------------------------ */
+
+.mdp-toolbar-options {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px 10px;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
-  background: var(--mdp-canvas, Canvas);
-  color: var(--mdp-ink, CanvasText);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  white-space: nowrap;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line-soft);
 }
-
-/* Below the rule above, for the reason given on .mdp-find-bar[hidden]. */
-.mdp-find-options[hidden] {
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
+.mdp-toolbar-options[hidden] {
   display: none;
 }
 
-.mdp-find-options label {
+.mdp-toolbar-options label {
   display: flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
-.mdp-find-options input {
-  width: auto;
+.mdp-toolbar-options input[type="checkbox"] {
   margin: 0;
-  accent-color: rgb(9, 105, 218);
+  accent-color: var(--accent);
+}
+
+.mdp-theme-label {
+  color: var(--muted);
+}
+.mdp-theme-label select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 6px;
+  outline: none;
+}
+.mdp-theme-label select:focus {
+  border-color: var(--accent);
 }
 
 /* An unfinished or invalid regular expression: say so on the input rather than
    silently reporting no matches. */
-.mdp-find-bar.mdp-find-invalid input {
-  border-color: rgba(207, 34, 46, 0.8);
+.mdp-toolbar.mdp-find-invalid input[type="text"] {
+  border-color: var(--crit);
 }
-.mdp-find-bar.mdp-find-invalid .mdp-find-count {
-  color: rgba(207, 34, 46, 0.95);
+.mdp-toolbar.mdp-find-invalid .mdp-find-count {
+  color: var(--crit);
 }
 
-/* The drag handle. Dragging is bound here rather than to the whole bar so that
-   selecting text inside the input still works. */
-.mdp-find-grip {
-  padding: 0 4px 0 2px;
-  cursor: grab;
-  opacity: 0.55;
-  user-select: none;
-  touch-action: none;          /* pointer events only; no scroll gesture */
-  line-height: 1;
-}
-.mdp-find-grip:hover { opacity: 0.9; }
-.mdp-find-bar.mdp-dragging .mdp-find-grip { cursor: grabbing; }
-.mdp-find-bar.mdp-dragging { user-select: none; }
+/* --- match highlights --------------------------------------------------------- */
 
 /*
- * While the bar sits at its default position it gets a strip of its own, so it
- * never covers the document's first line. Once the user drags it, the strip is
- * released -- where it goes after that is their business.
- */
-.mdp-find-reserved .markdown-body {
-  padding-top: calc(var(--mdp-gutter) + 34px);
-}
-
-/*
- * A match inside a diagram: text drawn in an <svg> cannot be wrapped in <mark>,
- * so the match is boxed by an absolutely positioned overlay in document
- * coordinates. Transparent to the pointer, and it scrolls with the diagram.
+ * A match inside a diagram or an image: content the search cannot wrap in
+ * <mark> (SVG internals, replaced elements) is boxed by an absolutely
+ * positioned overlay in document coordinates. Transparent to the pointer,
+ * scrolls with the content.
  */
 .mdp-find-overlay {
   position: absolute;
@@ -301,6 +317,14 @@ mjx-container[jax="SVG"][display="true"] {
   background: rgba(255, 140, 0, 0.45);
   outline: 2px solid rgba(255, 140, 0, 1);
 }
+/* Whole-image matches: the box marks the image, not a word inside it - keep
+   the fill light so the picture stays readable. */
+.mdp-find-overlay.mdp-find-image {
+  background: rgba(255, 212, 0, 0.14);
+}
+.mdp-find-overlay.mdp-find-image.mdp-find-current {
+  background: rgba(255, 140, 0, 0.2);
+}
 
 mark.mdp-find {
   background: rgba(255, 212, 0, 0.45);
@@ -313,96 +337,27 @@ mark.mdp-find.mdp-find-current {
   color: #1f2328;
 }
 
-/* --- floating table of contents ------------------------------------------ */
+/* --- contents rail ------------------------------------------------------------ */
 
 .mdp-toc {
   position: fixed;
-  top: 12px;
-  right: 16px;
+  top: var(--mdp-bar-offset, 0px);
+  right: 0;
+  bottom: 0;
   z-index: 10;
   box-sizing: border-box;
   width: 220px;
-  max-height: calc(100vh - 24px);
-  display: flex;
-  flex-direction: column;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
-  background: var(--mdp-canvas, Canvas);
-  color: var(--mdp-ink, CanvasText);
+  overflow-y: auto;
+  padding: 8px 0;
+  background: var(--surface-2);
+  color: var(--ink);
+  border-left: 1px solid var(--line);
   font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  opacity: 0.96;
+  box-shadow: var(--shadow);
 }
-
-/* Must stay below the rule above; see the note on .mdp-find-bar[hidden]. */
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
 .mdp-toc[hidden] {
   display: none;
-}
-
-.mdp-toc-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-  cursor: pointer;
-  user-select: none;
-}
-
-.mdp-toc-title {
-  flex: 1;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.mdp-toc-collapse {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.7;
-}
-.mdp-toc-collapse:hover {
-  opacity: 1;
-  background: rgba(128, 128, 128, 0.2);
-}
-
-/* Collapsed: just the "Contents" pill, parked where the panel was. */
-.mdp-toc.mdp-collapsed {
-  width: auto;
-}
-.mdp-toc.mdp-collapsed .mdp-toc-header {
-  border-bottom: 0;
-}
-.mdp-toc.mdp-collapsed .mdp-toc-list {
-  display: none;
-}
-
-.mdp-toc-hide {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.7;
-}
-.mdp-toc-hide:hover {
-  opacity: 1;
-  background: rgba(128, 128, 128, 0.2);
-}
-
-.mdp-toc-list {
-  overflow-y: auto;
-  padding: 6px 0;
 }
 
 .mdp-toc-list a {
@@ -417,14 +372,14 @@ mark.mdp-find.mdp-find-current {
 }
 .mdp-toc-list a:hover {
   opacity: 1;
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
-
 .mdp-toc-list a.mdp-toc-h2 { padding-left: 22px; }
 .mdp-toc-list a.mdp-toc-h3 { padding-left: 32px; }
 .mdp-toc-list a.mdp-toc-h4 { padding-left: 42px; }
 
-/* A floating panel over a narrow pane covers the document; drop it. */
+/* A docked rail on a narrow pane covers too much of the document; drop it. */
 @media (max-width: 640px) {
   .mdp-toc { display: none; }
 }
@@ -436,12 +391,12 @@ mark.mdp-find.mdp-find-current {
   margin: 0;
   padding: 10px var(--mdp-gutter);
   font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
-  border-bottom: 1px solid var(--borderColor-default, #d0d7de);
-  background: var(--bgColor-attention-muted, #fff8c5);
-  color: var(--fgColor-default, #1f2328);
+  border-bottom: 1px solid var(--line);
+  background: var(--warn-soft);
+  color: var(--ink);
 }
 .notice[data-severity="error"] {
-  background: var(--bgColor-danger-muted, #ffebe9);
+  background: var(--crit-soft);
 }
 .notice code {
   font-family: ui-monospace, Consolas, monospace;
@@ -450,8 +405,9 @@ mark.mdp-find.mdp-find-current {
 /* --- print (Explorer's preview pane can be printed via the frame) -------- */
 
 @media print {
-  body { overflow: visible; }
+  body { overflow: visible; padding-top: 0; }
   .notice { display: none; }
   .mdp-toc { display: none; }
+  .mdp-toolbar { display: none; }
   .markdown-body { max-width: none; padding: 0; }
 }

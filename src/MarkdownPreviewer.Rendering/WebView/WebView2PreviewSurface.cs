@@ -645,6 +645,38 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
                 break;
 
+            case "imageTextRequest":
+                // The page cannot see inside an <img> - an SVG loaded that way
+                // is a separate document. We are already the thing serving
+                // those files, so read the text out and hand it back. Only
+                // document-host SVGs qualify; anything else silently yields
+                // nothing rather than an error the page cannot act on.
+                if (message.Urls is { Length: > 0 } requested)
+                {
+                    var entries = new List<ImageTextEntry>();
+                    foreach (string rawUrl in requested.Take(40))
+                    {
+                        if (Uri.TryCreate(rawUrl, UriKind.Absolute, out Uri? imageUri) &&
+                            string.Equals(imageUri.Host, DocumentHost, StringComparison.OrdinalIgnoreCase) &&
+                            imageUri.AbsolutePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) &&
+                            TryMapDocumentUrl(imageUri, out string imagePath))
+                        {
+                            entries.Add(new ImageTextEntry
+                            {
+                                Url = rawUrl,
+                                Text = SvgTextExtractor.Extract(imagePath),
+                            });
+                        }
+                    }
+
+                    if (entries.Count > 0)
+                    {
+                        Post(new HostToPageMessage { Kind = "imageText", Images = [.. entries] });
+                    }
+                }
+
+                break;
+
             case "openDocument":
                 // A link to a sibling of the previewed document. Resolve it back
                 // to a real file, confined to the document's folder; the

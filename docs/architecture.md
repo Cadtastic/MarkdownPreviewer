@@ -199,6 +199,28 @@ Three things make the cache self-healing, and all three matter:
 3. A browser-process failure no longer latches the surface permanently
    unusable. The dead control is dropped so the next selection rebuilds it.
 
+### One toolbar, tokens all the way down
+
+Search, its options row, the theme selector and the contents toggle live in a
+single top toolbar; the body is padded by `--mdp-bar-offset` (measured from the
+real toolbar height, with a nominal fallback for the pre-layout frame) so the
+document is never covered. The contents rail docks below the same offset and is
+allowed to hang over the document — that one is chrome the reader summoned.
+
+Every colour in the chrome comes from a seventeen-token theme contract
+(`--ground`, `--surface`, `--ink`, `--accent`, …) defined per palette in
+`themes.css` and selected by a `data-mdp-theme` attribute. System mode maps the
+host's light/dark signal onto the stock GitHub palettes; the six named palettes
+carry a fixed lightness and ignore the host signal.
+
+The wrinkle worth remembering: the vendored github-markdown stylesheets are
+FLATTENED builds — their colours are hard-coded, not `var()`-driven — so a named
+palette cannot re-tint the document through variables alone. `themes.css`
+therefore also overrides the flattened rules directly (links, borders, tables,
+code backgrounds) under a `data-mdp-named` marker. Syntax highlighting keeps the
+GitHub light or dark colour set matching the palette's lightness; re-deriving a
+syntax palette per theme is not worth the drift.
+
 ### Find in page is ours, not the browser's
 
 `AreBrowserAcceleratorKeysEnabled` is off, which disables the browser's own
@@ -226,11 +248,11 @@ overlays live on `<body>` rather than under `#content`, so a re-render has to
 remove them by hand or they leak one set per selection; and diagrams scale with
 the pane, so a resize re-runs the search rather than leaving the boxes behind.
 
-### The floating panels hide with `hidden`, and the CSS has to allow it
+### The chrome hides with `hidden`, and the CSS has to allow it
 
-Both overlays — the find bar and the table of contents — are shown and hidden by
-setting the `hidden` attribute. That works only because each panel is followed by
-a `[hidden] { display: none }` rule of its own.
+The toolbar, its options row, and the contents rail are shown and hidden by
+setting the `hidden` attribute. That works only because each panel is followed
+by a `[hidden] { display: none }` rule of its own.
 
 The HTML `hidden` attribute takes effect through the user-agent stylesheet rule
 `[hidden] { display: none }`, and **author declarations outrank user-agent ones
@@ -248,6 +270,21 @@ Two rules follow from it:
 2. Test **computed display**, never `element.hidden`. The property was correct
    the entire time the bug was on screen, which is why 125 passing assertions
    never noticed.
+
+### Search reads pictures with the host's help
+
+Text drawn inside an inline diagram is walkable DOM. Text inside an `<img>` is
+not: an SVG loaded that way is a separate, non-scriptable document, and a
+raster image has no DOM at all. The host, however, is already the thing serving
+every document-relative image, so for SVGs it also extracts their `<text>`
+content (a locked-down `XmlReader` — DTDs prohibited, invisible containers
+skipped, size-capped, cached by write-time) and posts it to the page after each
+render (`imageTextRequest` → `imageText`). The search treats that text — plus
+every image's alt and title — as the image's haystack, and a match boxes the
+whole image: the exact word position inside a replaced element is not knowable
+from outside it. OCR for raster images was considered and rejected: the
+tesseract-class engines cost more megabytes than every other asset combined,
+seconds per image, and a CSP hole, for mediocre accuracy on UI screenshots.
 
 ### Render ordering by host token
 

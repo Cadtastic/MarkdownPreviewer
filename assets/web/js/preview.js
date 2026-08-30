@@ -32,7 +32,7 @@
 
   // Reported to the host in the "ready" handshake and logged, so a mismatch
   // between the installed binaries and the render assets is visible.
-  var VERSION = '1.2.0';
+  var VERSION = '1.3.0';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
@@ -49,7 +49,9 @@
     md: null,
     mdSignature: null,
     tocVisible: true,
-    tocCollapsed: false
+    themeName: 'system',      // 'system' or a named palette from THEME_LIGHTNESS
+    appearance: 'light',      // effective lightness after resolving themeName
+    imageText: Object.create(null)   // img src -> text the host extracted from it
   };
 
   var assetLoads = Object.create(null);   // href -> Promise
@@ -440,7 +442,7 @@
     }
   }
 
-  // --------------------------------------------------------- table of contents ---
+  // --------------------------------------------------------- contents rail ---
 
   function readTocPreference() {
     try { return window.localStorage.getItem('mdp.toc') !== '0'; }
@@ -452,48 +454,16 @@
     catch (_) { /* storage unavailable; the choice just will not persist */ }
   }
 
-  function readTocCollapsedPreference() {
-    try { return window.localStorage.getItem('mdp.tocCollapsed') === '1'; }
-    catch (_) { return false; }
-  }
-
-  function storeTocCollapsedPreference(collapsed) {
-    try { window.localStorage.setItem('mdp.tocCollapsed', collapsed ? '1' : '0'); }
-    catch (_) { /* storage unavailable; the choice just will not persist */ }
-  }
-
-  /*
-   * Collapse is independent of visibility: × removes the panel (context menu
-   * brings it back), the chevron shrinks it to a "Contents" pill so it stops
-   * covering the document without losing its spot.
-   */
-  function setTocCollapsed(collapsed) {
-    state.tocCollapsed = collapsed === true;
-    storeTocCollapsedPreference(state.tocCollapsed);
-    toc.classList.toggle('mdp-collapsed', state.tocCollapsed);
-
-    var chevron = document.getElementById('toc-collapse');
-    if (chevron) {
-      chevron.textContent = state.tocCollapsed ? '▸' : '▾';
-      chevron.title = state.tocCollapsed ? 'Expand' : 'Collapse';
-      chevron.setAttribute('aria-expanded', state.tocCollapsed ? 'false' : 'true');
-    }
-  }
-
   /*
    * Rebuilt per render from the headings markdown-it-anchor gave ids to.
-   * Documents with fewer than two headings get no TOC regardless of the
-   * visibility preference — a one-heading TOC is noise.
+   * Documents with fewer than two headings get no contents rail regardless of
+   * the visibility preference - a one-heading outline is noise - and the
+   * toolbar's Contents button disables itself to say why.
    */
   function buildToc() {
     tocList.textContent = '';
 
     var headings = content.querySelectorAll('h1[id], h2[id], h3[id], h4[id]');
-    if (headings.length < 2) {
-      toc.hidden = true;
-      return;
-    }
-
     for (var i = 0; i < headings.length; i++) {
       var heading = headings[i];
       var link = document.createElement('a');
@@ -503,13 +473,36 @@
       tocList.appendChild(link);
     }
 
-    toc.hidden = !state.tocVisible;
+    syncRail();
   }
 
   function setTocVisible(visible) {
     state.tocVisible = visible === true;
     storeTocPreference(state.tocVisible);
-    toc.hidden = !(state.tocVisible && tocList.childElementCount >= 2);
+    syncRail();
+  }
+
+  /*
+   * The single place the rail's visibility is decided: the user preference,
+   * whether this document has enough headings, and whether the toolbar - the
+   * rail's only control surface - is on screen at all.
+   */
+  function syncRail() {
+    var toggle = document.getElementById('toc-toggle');
+    var chevron = document.getElementById('toc-chevron');
+    var eligible = tocList.childElementCount >= 2;
+    var open = state.tocVisible && eligible && !find.bar.hidden;
+
+    toc.hidden = !open;
+
+    if (toggle) {
+      toggle.disabled = !eligible;
+      toggle.title = eligible ? '' : 'This document has fewer than two headings';
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.classList.toggle('mdp-active', open);
+    }
+
+    if (chevron) { chevron.textContent = open ? '\u25B4' : '\u25BE'; }
   }
 
   // ------------------------------------------------------------ find in page ---
@@ -524,10 +517,9 @@
   var MAX_FIND_MATCHES = 2000;
 
   var find = {
-    bar: document.getElementById('find'),
+    bar: document.getElementById('toolbar'),
     input: document.getElementById('find-input'),
     count: document.getElementById('find-count'),
-    position: null,          // null = default spot, and the document reserves a strip
     marks: [],
     overlays: [],            // highlight boxes drawn over SVG (diagram) text
     index: -1,
@@ -577,114 +569,49 @@
     }
   }
 
-  function openFind() {
+  /*
+   * The toolbar is the only chrome: search, its options row, and the contents
+   * toggle all live in it, and its height is reserved below it so the document
+   * is never covered (the contents rail, by design, does hang over content).
+   */
+  function layoutChrome() {
+    var offset = 0;
+
+    if (!find.bar.hidden) {
+      offset = find.bar.offsetHeight;
+
+      // Before first layout (and under jsdom, which has none) the measure is
+      // 0; fall back to the nominal heights so the document is never covered
+      // during the frame the bar appears in.
+      if (offset === 0) {
+        var optionsRow = document.getElementById('find-opts');
+        offset = 41 + (optionsRow && !optionsRow.hidden ? 34 : 0);
+      }
+    }
+
+    document.documentElement.style.setProperty('--mdp-bar-offset', offset + 'px');
+  }
+
+  function showToolbar() {
     find.bar.hidden = false;
-    applyFindPosition();
+    layoutChrome();
+    syncRail();
+  }
+
+  function openFind() {
+    showToolbar();
     find.input.focus();
     find.input.select();
     if (find.input.value) { runFind(find.input.value); }
   }
 
-  function closeFind() {
+  function closeToolbar() {
     find.bar.hidden = true;
-    document.body.classList.remove('mdp-find-reserved');
-
-    var panel = document.getElementById('find-opts');
-    if (panel) { panel.hidden = true; }
+    layoutChrome();
+    syncRail();               // the rail's control surface is gone; so is it
     clearFindMarks();
+    find.bar.classList.remove('mdp-find-invalid');
     find.count.textContent = '';
-  }
-
-  // ------------------------------------------------------- moving the bar ---
-
-  function readFindPosition() {
-    try {
-      var raw = window.localStorage.getItem('mdp.findPos');
-      if (!raw) { return null; }
-      var parsed = JSON.parse(raw);
-      return (typeof parsed.left === 'number' && typeof parsed.top === 'number')
-        ? parsed : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function storeFindPosition(position) {
-    try {
-      if (position) {
-        window.localStorage.setItem('mdp.findPos', JSON.stringify(position));
-      } else {
-        window.localStorage.removeItem('mdp.findPos');
-      }
-    } catch (_) { /* storage unavailable; the choice just will not persist */ }
-  }
-
-  /*
-   * Places the bar, and decides whether the document owes it a strip.
-   *
-   * Undragged, the bar sits top-left and the document is padded down so the
-   * bar never covers the first line. Once moved, that padding is released:
-   * reserving space for a panel that is no longer there just leaves a gap.
-   */
-  function applyFindPosition() {
-    var position = find.position;
-
-    if (!position) {
-      find.bar.style.left = '';
-      find.bar.style.top = '';
-      document.body.classList.add('mdp-find-reserved');
-      return;
-    }
-
-    document.body.classList.remove('mdp-find-reserved');
-    var clamped = clampToViewport(position);
-    find.bar.style.left = clamped.left + 'px';
-    find.bar.style.top = clamped.top + 'px';
-  }
-
-  /* Keeps the bar reachable when the pane is resized smaller than the position
-     it was left at -- otherwise a stored position can strand it off-screen. */
-  function clampToViewport(position) {
-    var width = find.bar.offsetWidth || 260;
-    var height = find.bar.offsetHeight || 34;
-    var maxLeft = Math.max(0, window.innerWidth - width - 4);
-    var maxTop = Math.max(0, window.innerHeight - height - 4);
-    return {
-      left: Math.min(Math.max(position.left, 4), maxLeft),
-      top: Math.min(Math.max(position.top, 4), maxTop)
-    };
-  }
-
-  function beginFindDrag(event) {
-    // Left button only; anything else is a context menu or a stray touch.
-    if (event.button !== undefined && event.button !== 0) { return; }
-    event.preventDefault();
-
-    var rect = find.bar.getBoundingClientRect();
-    var offsetX = event.clientX - rect.left;
-    var offsetY = event.clientY - rect.top;
-
-    find.bar.classList.add('mdp-dragging');
-
-    function onMove(moveEvent) {
-      find.position = clampToViewport({
-        left: moveEvent.clientX - offsetX,
-        top: moveEvent.clientY - offsetY
-      });
-      applyFindPosition();
-    }
-
-    function onUp() {
-      find.bar.classList.remove('mdp-dragging');
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      storeFindPosition(find.position);
-    }
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
   }
 
   function clearFindMarks() {
@@ -838,6 +765,22 @@
       }
     }
 
+    // Images: alt, title, and any text the host extracted from an SVG. One
+    // box per image however many times the pattern occurs inside it - there
+    // is no meaningful "second position" on a replaced element.
+    var images = content.querySelectorAll('img');
+    for (var im = 0; im < images.length && find.marks.length < MAX_FIND_MATCHES; im++) {
+      var image = images[im];
+      var haystack2 = (image.getAttribute('alt') || '') + '\n' +
+                      (image.getAttribute('title') || '') + '\n' +
+                      (state.imageText[image.src] || '');
+
+      pattern.lastIndex = 0;
+      if (haystack2.trim().length > 0 && pattern.test(haystack2)) {
+        addImageHighlight(image);
+      }
+    }
+
     if (find.marks.length > 0) {
       setCurrentMatch(0);
     } else {
@@ -866,10 +809,73 @@
     find.count.textContent = (find.index + 1) + '/' + find.marks.length + suffix;
   }
 
+  // ------------------------------------------------------------- image text ---
+
+  /*
+   * Text inside an <img> is unreachable from this document: an SVG loaded
+   * through <img> is a separate, non-scriptable document, and a raster image
+   * has no DOM at all. The HOST already serves every document-relative image
+   * from disk, so for SVGs it can also read the <text> the diagram draws.
+   * After each render the page asks for the text of the document's SVG
+   * images; the reply fills state.imageText, and the search treats it - along
+   * with every image's alt and title - as that image's haystack. Matches box
+   * the whole image: the exact word position inside a replaced element is not
+   * knowable from out here.
+   */
+  var MAX_IMAGE_TEXT_REQUESTS = 40;
+
+  function requestImageText() {
+    var images = content.querySelectorAll('img');
+    var urls = [];
+
+    for (var i = 0; i < images.length && urls.length < MAX_IMAGE_TEXT_REQUESTS; i++) {
+      var src = images[i].src || '';
+      if (src.indexOf(DOC_ORIGIN + '/') === 0 &&
+          /\.svg$/i.test(src) &&
+          urls.indexOf(src) < 0) {
+        urls.push(src);
+      }
+    }
+
+    if (urls.length > 0) {
+      post({ kind: 'imageTextRequest', urls: urls });
+    }
+
+    // Once an image gets its real size, any overlay drawn over it while it
+    // measured 0x0 is wrong; re-run an active search to reposition.
+    for (var j = 0; j < images.length; j++) {
+      images[j].addEventListener('load', rerunActiveFindSoon, { once: true });
+    }
+  }
+
+  function rerunActiveFindSoon() {
+    if (find.bar.hidden || !find.input.value) { return; }
+    window.clearTimeout(find.timer);
+    find.timer = window.setTimeout(function () { runFind(find.input.value); }, 100);
+  }
+
+  function addImageHighlight(image) {
+    // A still-loading image measures 0x0; box it anyway so the match counts,
+    // and the load listener below re-runs the search once real geometry
+    // exists. Skipping it would silently drop the match.
+    var rect = image.getBoundingClientRect();
+
+    var box = document.createElement('div');
+    box.className = 'mdp-find mdp-find-overlay mdp-find-image';
+    box.style.left = (rect.left + window.scrollX) + 'px';
+    box.style.top = (rect.top + window.scrollY) + 'px';
+    box.style.width = rect.width + 'px';
+    box.style.height = rect.height + 'px';
+
+    document.body.appendChild(box);
+    find.marks.push(box);
+    find.overlays.push(box);
+  }
+
   // ----------------------------------------------------------------- mermaid ---
 
   function mermaidTheme() {
-    return state.theme === 'dark' ? 'dark' : 'default';
+    return state.appearance === 'dark' ? 'dark' : 'default';
   }
 
   function renderMermaid(root, token, warnings) {
@@ -954,22 +960,86 @@
 
   // ------------------------------------------------------------------- theme ---
 
-  function applyTheme(theme) {
-    var dark = theme === 'dark';
-    state.theme = dark ? 'dark' : 'light';
+  /*
+   * Seven appearances: System (the host resolves light/dark from Windows and
+   * its registry settings, rendered with the stock GitHub palettes) and six
+   * named palettes with a fixed lightness. The name is a per-user, page-side
+   * preference; the host keeps sending its light/dark signal, which only
+   * matters while System is selected.
+   */
+  var THEME_LIGHTNESS = {
+    paper: 'light', arctic: 'light', ledger: 'light',
+    harbor: 'dark', midnight: 'dark', carbon: 'dark'
+  };
 
+  function readThemePreference() {
+    try {
+      var raw = window.localStorage.getItem('mdp.theme');
+      return (raw && THEME_LIGHTNESS[raw]) ? raw : 'system';
+    } catch (_) {
+      return 'system';
+    }
+  }
+
+  function storeThemePreference(name) {
+    try { window.localStorage.setItem('mdp.theme', name); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  /* Host light/dark signal; only decides anything while the theme is System. */
+  function applyTheme(theme) {
+    state.theme = theme === 'dark' ? 'dark' : 'light';
+    applyAppearance();
+  }
+
+  function applyAppearance() {
+    var palette;
+    var dark;
+
+    if (THEME_LIGHTNESS[state.themeName]) {
+      palette = state.themeName;
+      dark = THEME_LIGHTNESS[palette] === 'dark';
+    } else {
+      dark = state.theme === 'dark';
+      palette = dark ? 'github-dark' : 'github-light';
+    }
+
+    state.appearance = dark ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-mdp-theme', palette);
+
+    // Named palettes need themes.css to override the GitHub sheets' colours
+    // directly: the vendored sheets are flattened builds with the colours
+    // hard-coded, so variable overrides alone cannot re-tint them.
+    if (THEME_LIGHTNESS[palette]) {
+      document.documentElement.setAttribute('data-mdp-named', '');
+    } else {
+      document.documentElement.removeAttribute('data-mdp-named');
+    }
+
+    // The GitHub body/code sheets still carry the document's base styling and
+    // the syntax colours; a named palette picks the pair matching its own
+    // lightness and re-tints via the tokens in themes.css.
     setMedia('css-body-light', !dark);
     setMedia('css-body-dark', dark);
     setMedia('css-code-light', !dark);
     setMedia('css-code-dark', dark);
 
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-    // github-markdown-css paints .markdown-body; mirror its colours onto the
-    // canvas so over-scroll, the area beside a narrow document, and chrome that
-    // lives outside .markdown-body (the floating TOC) match the document.
-    var computed = window.getComputedStyle(content);
-    document.documentElement.style.setProperty('--mdp-canvas', computed.backgroundColor);
-    document.documentElement.style.setProperty('--mdp-ink', computed.color);
+  }
+
+  function setThemeName(name) {
+    var before = state.appearance;
+    state.themeName = THEME_LIGHTNESS[name] ? name : 'system';
+    storeThemePreference(state.themeName);
+    applyAppearance();
+
+    // Mermaid bakes colours into its SVG at render time; a lightness flip
+    // needs the diagrams redrawn. A same-lightness palette change does not -
+    // diagram colours come from mermaid's own light/dark themes, not ours.
+    if (state.appearance !== before &&
+        content.querySelector('pre.mermaid[data-processed]')) {
+      post({ kind: 'rerenderRequested', reason: 'theme' });
+    }
   }
 
   function setMedia(id, enabled) {
@@ -1031,6 +1101,7 @@
       catch (error) { warnings.push('Task lists: ' + error.message); }
     }
     markBrokenImages(content);
+    requestImageText();
 
     try { buildToc(); }
     catch (error) { warnings.push('Contents: ' + error.message); }
@@ -1111,10 +1182,24 @@
         applyFontScale(state.settings.fontScalePercent);
         break;
 
-      case 'toc':
-        // The host's context-menu entry; a plain toggle so the menu needs no
-        // state of its own.
-        setTocVisible(!state.tocVisible);
+      case 'toc': {
+        // The host's context-menu entry. When the toolbar is closed the ask
+        // is unambiguous - bring the contents back - so opening must not
+        // depend on (or blindly flip) the stored preference. With the toolbar
+        // already up, it is a plain toggle.
+        var toolbarWasHidden = find.bar.hidden;
+        showToolbar();
+        setTocVisible(toolbarWasHidden ? true : !state.tocVisible);
+        break;
+      }
+
+      case 'imageText':
+        // The host's answer to imageTextRequest. Refresh an in-flight search:
+        // the text may create matches the walk could not see.
+        (message.images || []).forEach(function (entry) {
+          if (entry && entry.url) { state.imageText[entry.url] = entry.text || ''; }
+        });
+        if (!find.bar.hidden && find.input.value) { runFind(find.input.value); }
         break;
 
       case 'find':
@@ -1178,7 +1263,7 @@
   var h = host();
   if (h) { h.addEventListener('message', onHostMessage); }
 
-  // --- find in page ---------------------------------------------------------
+  // --- keyboard ---------------------------------------------------------------
 
   document.addEventListener('keydown', function (event) {
     if ((event.ctrlKey || event.metaKey) && (event.key === 'f' || event.key === 'F')) {
@@ -1189,19 +1274,7 @@
 
     if (event.key === 'Escape' && !find.bar.hidden) {
       event.preventDefault();
-
-      // Esc closes the options panel first if it is open, so a stray Esc does
-      // not throw away the search along with it.
-      var panel = document.getElementById('find-opts');
-      if (panel && !panel.hidden) {
-        panel.hidden = true;
-        document.getElementById('find-options').setAttribute('aria-expanded', 'false');
-        document.getElementById('find-options').classList.remove('mdp-active');
-        find.input.focus();
-        return;
-      }
-
-      closeFind();
+      closeToolbar();
       return;
     }
 
@@ -1211,6 +1284,8 @@
       setCurrentMatch(find.index + (event.shiftKey ? -1 : 1));
     }
   });
+
+  // --- search -------------------------------------------------------------------
 
   find.input.addEventListener('input', function () {
     // Debounced: retyping a query on a long document would otherwise re-walk
@@ -1240,16 +1315,13 @@
   document.getElementById('find-prev').addEventListener('click', function () {
     setCurrentMatch(find.index - 1);
   });
-  document.getElementById('find-close').addEventListener('click', closeFind);
+  document.getElementById('toolbar-close').addEventListener('click', closeToolbar);
 
-  find.position = readFindPosition();
-  document.getElementById('find-grip').addEventListener('pointerdown', beginFindDrag);
-
-  // --- search options -------------------------------------------------------
+  // --- search options row ---------------------------------------------------------
 
   readFindOptions();
 
-  var findOptsPanel = document.getElementById('find-opts');
+  var findOptsRow = document.getElementById('find-opts');
   var findOptsButton = document.getElementById('find-options');
   var optionBoxes = {
     matchCase: document.getElementById('find-case'),
@@ -1269,56 +1341,51 @@
   });
 
   function setFindOptionsOpen(open) {
-    findOptsPanel.hidden = !open;
+    findOptsRow.hidden = !open;
     findOptsButton.setAttribute('aria-expanded', open ? 'true' : 'false');
     findOptsButton.classList.toggle('mdp-active', open);
+    try { window.localStorage.setItem('mdp.optsRow', open ? '1' : '0'); }
+    catch (_) { /* not persisted, still works */ }
+    layoutChrome();             // the toolbar just changed height
   }
 
-  findOptsButton.addEventListener('click', function (event) {
-    event.stopPropagation();
-    setFindOptionsOpen(findOptsPanel.hidden);
+  findOptsButton.addEventListener('click', function () {
+    setFindOptionsOpen(findOptsRow.hidden);
   });
 
-  // Click-away closes the panel, but not clicks inside the bar itself -- the
-  // checkboxes live there, and so does the button that opened it.
-  document.addEventListener('mousedown', function (event) {
-    if (findOptsPanel.hidden) { return; }
-    if (!find.bar.contains(event.target)) { setFindOptionsOpen(false); }
-  });
+  // The row is part of the toolbar, not a popover: reopen it the way it was left.
+  try {
+    if (window.localStorage.getItem('mdp.optsRow') === '1') { setFindOptionsOpen(true); }
+  } catch (_) { /* default closed */ }
 
-  // A stored position can end up off-screen when the pane is narrowed; re-clamp
-  // so the bar is always reachable.
   window.addEventListener('resize', function () {
-    if (find.bar.hidden) { return; }
-    applyFindPosition();
+    layoutChrome();
 
-    // Diagrams scale with the pane (useMaxWidth), so any overlay drawn over one
+    // Diagrams and images scale with the pane, so any overlay drawn over one
     // is now in the wrong place. Re-running is cheaper than tracking each box.
-    if (find.overlays.length > 0 && find.input.value) {
+    if (!find.bar.hidden && find.overlays.length > 0 && find.input.value) {
       window.clearTimeout(find.timer);
       find.timer = window.setTimeout(function () { runFind(find.input.value); }, 150);
     }
   });
 
-  // --- table of contents ----------------------------------------------------
+  // --- contents rail -------------------------------------------------------------
 
   state.tocVisible = readTocPreference();
-  setTocCollapsed(readTocCollapsedPreference());
 
-  var tocHide = document.getElementById('toc-hide');
-  if (tocHide) {
-    tocHide.addEventListener('click', function (event) {
-      event.stopPropagation();               // the header click would re-toggle collapse
-      setTocVisible(false);
-    });
-  }
+  document.getElementById('toc-toggle').addEventListener('click', function () {
+    setTocVisible(toc.hidden);   // hidden -> open it; open -> hide it
+  });
 
-  // The whole header is the collapse/expand affordance, not just the chevron —
-  // a 12px triangle is a mean click target.
-  var tocHeader = document.getElementById('toc-header');
-  if (tocHeader) {
-    tocHeader.addEventListener('click', function () { setTocCollapsed(!state.tocCollapsed); });
-  }
+  // --- theme ----------------------------------------------------------------------
+
+  state.themeName = readThemePreference();
+
+  var themeSelect = document.getElementById('theme-select');
+  themeSelect.value = state.themeName;
+  themeSelect.addEventListener('change', function () {
+    setThemeName(themeSelect.value);
+  });
 
   applyTheme('light');
   post({ kind: 'ready', version: VERSION });

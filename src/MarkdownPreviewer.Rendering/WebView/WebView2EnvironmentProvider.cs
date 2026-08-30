@@ -105,9 +105,42 @@ internal static class WebView2EnvironmentProvider
         }
     }
 
-    private static string ResolveUserDataFolder() =>
-        Path.Combine(
+    /// <summary>
+    /// The user data folder, partitioned by host executable.
+    /// </summary>
+    /// <remarks>
+    /// WebView2's shared-browser compatibility check includes the HOST
+    /// EXECUTABLE's identity (the browser runs with
+    /// <c>--webview-exe-name=prevhost.exe</c>), so two different host
+    /// programs — prevhost and the harness, or prevhost and Outlook's reading
+    /// pane — can never attach to one browser on one folder: the second gets
+    /// <c>ERROR_INVALID_STATE</c>, and no retry can fix a genuine
+    /// incompatibility. Partitioning by executable name keeps the common case
+    /// shared (every Explorer pane is prevhost.exe) and makes the collision
+    /// impossible. The uninstaller removes the parent folder, so the
+    /// per-host subfolders go with it.
+    /// </remarks>
+    private static string ResolveUserDataFolder()
+    {
+        string hostName;
+        try
+        {
+            hostName = Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "host";
+        }
+        catch (Exception)
+        {
+            hostName = "host";
+        }
+
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+        {
+            hostName = hostName.Replace(invalid, '_');
+        }
+
+        return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MarkdownPreviewer",
-            "WebView2");
+            "WebView2",
+            hostName);
+    }
 }

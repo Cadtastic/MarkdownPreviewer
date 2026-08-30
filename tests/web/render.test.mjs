@@ -257,49 +257,61 @@ ok('click routed to the host as openDocument',
    JSON.stringify(posted));
 ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExternal'));
 
-console.log('\n== floating table of contents ==');
+console.log('\n== contents rail ==');
 const tocEl = window.document.getElementById('toc');
+const tocToggle = window.document.getElementById('toc-toggle');
+const openBar = () => window.document.dispatchEvent(
+  new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
+
 c = render('# One\n\n## Two\n\n## Three\n');
-ok('TOC visible for a document with headings', !isHidden(tocEl));
-ok('TOC lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
+ok('rail stays hidden while the toolbar is hidden', isHidden(tocEl));
+openBar();
+ok('rail appears with the toolbar for a heading-ful document', !isHidden(tocEl));
+ok('rail lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
    `got ${window.document.querySelectorAll('#toc-list a').length}`);
-ok('TOC entries link to the heading anchors',
+ok('rail entries link to the heading anchors',
    window.document.querySelector('#toc-list a')?.getAttribute('href') === '#one');
+ok('Contents button reads as expanded', tocToggle.getAttribute('aria-expanded') === 'true');
+
+// The toolbar's Contents button is the rail's only control.
+tocToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('Contents button hides the rail', isHidden(tocEl));
+ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
+tocToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('Contents button brings it back', !isHidden(tocEl));
 
 c = render('plain text, no headings\n');
-ok('TOC hidden for a document without headings', isHidden(tocEl),
-   'the panel is still rendered -- see issue #1');
+ok('rail hidden for a document without headings', isHidden(tocEl));
+ok('Contents button disabled without headings', tocToggle.disabled === true);
 
 c = render('# One\n\n## Two\n');
-ok('TOC returns for the next heading-ful document', !isHidden(tocEl));
+ok('rail returns for the next heading-ful document', !isHidden(tocEl));
+ok('Contents button re-enabled', tocToggle.disabled === false);
 
-// Collapse: shrinks to the "Contents" pill; independent of visibility; persists.
-window.document.getElementById('toc-header').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('header click collapses', tocEl.classList.contains('mdp-collapsed'));
-ok('collapse persisted', window.localStorage.getItem('mdp.tocCollapsed') === '1');
-window.document.getElementById('toc-collapse').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('chevron click expands again', !tocEl.classList.contains('mdp-collapsed'));
-
-// Hide via the x button; reshow via the host's context-menu message.
-window.document.getElementById('toc-hide').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('x button hides the panel', isHidden(tocEl), 'the x button did not hide it -- see issue #1');
-ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
+// The host's context-menu entry opens the toolbar along with the rail.
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing the toolbar takes the rail with it', isHidden(tocEl));
 listeners[0]({ data: { kind: 'toc' } });
-ok('host toc message shows it again', !isHidden(tocEl));
+ok('host toc message reopens toolbar and rail',
+   !isHidden(window.document.getElementById('toolbar')) && !isHidden(tocEl));
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
 console.log('\n== find in page ==');
-const findBar = window.document.getElementById('find');
+const findBar = window.document.getElementById('toolbar');
 const findInput = window.document.getElementById('find-input');
 const findCount = window.document.getElementById('find-count');
 const ctrlF = () => window.document.dispatchEvent(
   new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
 
 c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
-ok('find bar hidden until asked for', isHidden(findBar),
-   'the bar renders on every document -- see issue #1');
+ok('toolbar hidden until asked for', isHidden(findBar),
+   'the toolbar renders on every document -- see issue #1');
 
 ctrlF();
-ok('Ctrl+F opens the find bar', !isHidden(findBar));
+ok('Ctrl+F opens the toolbar', !isHidden(findBar));
+ok('the document is pushed below the toolbar',
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '' &&
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '0px');
 
 // runFind is debounced behind the input event; call the same path directly by
 // typing and firing input, then waiting past the debounce.
@@ -373,47 +385,27 @@ listeners[0]({ data: { kind: 'find' } });
 ok('a second host find message leaves it open', findBar.hidden === false);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
-console.log('\n== find bar: closing, reopening, moving ==');
-// Regression cover for issue #1: every one of these passed against the .hidden
-// property while the bar stayed on screen. They assert computed display.
+console.log('\n== toolbar: closing and reopening ==');
+// Regression cover for issue #1: these once passed against the .hidden
+// property while the chrome stayed on screen. They assert computed display.
 c = render('# Widgets\n\nThe widget counts widgets.\n');
 const click = (id) => window.document.getElementById(id)
   .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 ctrlF();
-ok('bar open before closing', !isHidden(findBar));
-click('find-close');
-ok('close button hides the bar', isHidden(findBar), 'the x did nothing -- see issue #1');
+ok('toolbar open before closing', !isHidden(findBar));
+click('toolbar-close');
+ok('close button hides the toolbar', isHidden(findBar));
 ok('closing clears the highlights', c.querySelectorAll('mark.mdp-find').length === 0);
+ok('closing releases the document strip',
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') === '0px');
 
 ctrlF();
-ok('Ctrl+F reopens a hidden bar', !isHidden(findBar));
-click('find-close');
+ok('Ctrl+F reopens a closed toolbar', !isHidden(findBar));
+click('toolbar-close');
 listeners[0]({ data: { kind: 'find' } });
-ok('the context menu reopens a hidden bar', !isHidden(findBar));
-
-// Undragged, the document reserves a strip so the bar cannot cover the title.
-ok('document reserves space for the bar',
-   window.document.body.classList.contains('mdp-find-reserved'));
-
-// Dragging by the grip moves the bar and releases that strip.
-const grip = window.document.getElementById('find-grip');
-const pointer = (type, x, y) => window.dispatchEvent(
-  new window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
-grip.dispatchEvent(new window.MouseEvent('pointerdown',
-  { clientX: 20, clientY: 20, button: 0, bubbles: true, cancelable: true }));
-pointer('pointermove', 320, 260);
-pointer('pointerup', 320, 260);
-
-ok('drag moved the bar', findBar.style.left !== '' && findBar.style.top !== '',
-   `left=${findBar.style.left} top=${findBar.style.top}`);
-ok('a moved bar releases the reserved strip',
-   !window.document.body.classList.contains('mdp-find-reserved'));
-ok('position persisted for the next document',
-   JSON.parse(window.localStorage.getItem('mdp.findPos') || 'null')?.left > 0);
-
-click('find-close');
-ok('a moved bar still closes', isHidden(findBar));
+ok('the context menu reopens a closed toolbar', !isHidden(findBar));
+click('toolbar-close');
 
 console.log('\n== find options: case, whole word, regex ==');
 // All three are independent and combine; regex + whole word wraps the pattern
@@ -469,14 +461,21 @@ ok('the same text is a literal search once regex is off',
    findCount.textContent === '0/0', `got ${findCount.textContent}`);
 ok('invalid flag cleared', !findBar.classList.contains('mdp-find-invalid'));
 
-// The gear panel is a panel like any other: it must actually hide.
+// The options row is part of the toolbar, and it remembers being open.
 const optsPanel = window.document.getElementById('find-opts');
-ok('options panel hidden until asked for', isHidden(optsPanel));
+ok('options row hidden until asked for', isHidden(optsPanel));
 click('find-options');
-ok('gear opens the options panel', !isHidden(optsPanel));
-click('find-options');
-ok('gear closes it again', isHidden(optsPanel));
+ok('gear opens the options row', !isHidden(optsPanel));
+ok('row open state persisted', window.localStorage.getItem('mdp.optsRow') === '1');
+const offsetWithRow = window.document.documentElement.style.getPropertyValue('--mdp-bar-offset');
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ctrlF();
+ok('reopened toolbar restores the open row', !isHidden(optsPanel));
+click('find-options');
+ok('gear closes the row again', isHidden(optsPanel));
+ok('row closed state persisted', window.localStorage.getItem('mdp.optsRow') === '0');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+void offsetWithRow;
 
 console.log('\n== find inside a rendered diagram ==');
 // The reported bug: text drawn inside a mermaid SVG was invisible to search.
@@ -508,6 +507,52 @@ window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape
 ok('closing removes the diagram overlays',
    window.document.querySelectorAll('.mdp-find-overlay').length === 0);
 
+console.log('\n== find inside images: alt, title, extracted SVG text ==');
+// An <img>-loaded SVG is a separate document the page cannot see into; the
+// HOST extracts its text and posts it back. Alt and title need no host at
+// all. Either way the match boxes the whole image.
+posted.length = 0;
+c = render('# Pics\n\n![layer diagram](images/arch.svg)\n\n![screenshot](images/shot.png \"login screen\")\n');
+
+const textReq = posted.find(m => m.kind === 'imageTextRequest');
+ok('page asks the host for SVG text only', !!textReq && textReq.urls.length === 1 &&
+   textReq.urls[0] === 'https://doc.mdpreview.invalid/notes/images/arch.svg',
+   JSON.stringify(textReq));
+
+ctrlF();
+await search('screenshot');
+ok('alt text matches as an image box', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+ok('the box is an image overlay',
+   window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length === 1);
+
+await search('login');
+ok('title text matches too', findCount.textContent === '1/1', `got ${findCount.textContent}`);
+
+await search('Adapters');
+ok('nothing before the host answers', findCount.textContent === '0/0',
+   `got ${findCount.textContent}`);
+
+listeners[0]({ data: { kind: 'imageText', images: [
+  { url: 'https://doc.mdpreview.invalid/notes/images/arch.svg',
+    text: 'Domain Application Adapters Shell' }
+] } });
+await new Promise(r => setTimeout(r, 30));
+ok('host-extracted SVG text turns into a match', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+ok('the SVG match boxes its image',
+   window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length === 1);
+
+// One box per image, however often the pattern occurs inside it: 'a' hits
+// the SVG image's alt AND its extracted text, several times each.
+await search('a');
+const imageBoxes = window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length;
+ok('an image is never boxed twice for one query', imageBoxes === 1, `got ${imageBoxes}`);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing removes image overlays too',
+   window.document.querySelectorAll('.mdp-find-overlay').length === 0);
+
 console.log('\n== render completion reporting ==');
 c = render('# done\n');
 await new Promise(r => setTimeout(r, 60));
@@ -532,13 +577,44 @@ for (const hostToken of [2, 7, 99, 100000]) {
 }
 
 console.log('\n== theme switching ==');
-render('# t\n', {}, 'dark');
+const rootEl = window.document.documentElement;
 const media = id => window.document.getElementById(id).media;
+const themeSelect = window.document.getElementById('theme-select');
+
+render('# t\n', {}, 'dark');
 ok('dark body stylesheet enabled',  media('css-body-dark') === 'all');
 ok('light body stylesheet disabled', media('css-body-light') === 'not all');
 ok('dark code stylesheet enabled',  media('css-code-dark') === 'all');
+ok('System dark maps to the stock GitHub palette',
+   rootEl.getAttribute('data-mdp-theme') === 'github-dark');
 render('# t\n', {}, 'light');
 ok('flips back to light', media('css-body-light') === 'all' && media('css-body-dark') === 'not all');
+ok('System light maps to the stock GitHub palette',
+   rootEl.getAttribute('data-mdp-theme') === 'github-light');
+
+// Named palettes: fixed lightness, host signal stops mattering.
+themeSelect.value = 'harbor';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('named dark palette applies its attribute', rootEl.getAttribute('data-mdp-theme') === 'harbor');
+ok('named dark palette forces the dark sheets', media('css-body-dark') === 'all');
+ok('theme choice persisted', window.localStorage.getItem('mdp.theme') === 'harbor');
+ok('colour-scheme follows the palette', rootEl.style.colorScheme === 'dark');
+
+render('# t\n', {}, 'light');
+ok('host light signal does not override a named dark palette',
+   rootEl.getAttribute('data-mdp-theme') === 'harbor' && media('css-body-dark') === 'all');
+
+themeSelect.value = 'paper';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('switching to a light palette flips the sheets',
+   rootEl.getAttribute('data-mdp-theme') === 'paper' && media('css-body-light') === 'all');
+
+themeSelect.value = 'system';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+render('# t\n', {}, 'dark');
+ok('back on System, the host signal rules again',
+   rootEl.getAttribute('data-mdp-theme') === 'github-dark');
+render('# t\n', {}, 'light');
 
 console.log('\n== lazy asset loading (a 2.1 MB / 3.5 MB decision per document) ==');
 async function assetsFor(md, settings) {

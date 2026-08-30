@@ -26,13 +26,18 @@ does, but integrated where you already are.
 - **Syntax highlighting** — highlight.js, 64 curated languages
 - **Mermaid diagrams** — ` ```mermaid ` fences render as real diagrams
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
-- **Light/dark theming** — follows the Windows app colour mode, or pin one
-- **Find in page** — `Ctrl+F` searches the rendered document, highlights every
-  match, and cycles with `Enter` / `Shift+Enter` (or `F3`); `Esc` closes. Match
-  case, whole word and regular expression sit behind the gear, and text drawn
-  inside Mermaid diagrams is searched and boxed like any other match
-- **Floating table of contents** — collapse it to a pill with its chevron,
-  hide it with its × button, bring it back from the right-click menu
+- **Seven themes** — System follows the Windows colour mode; Paper, Arctic and
+  Ledger (light) and Harbor, Midnight and Carbon (dark) re-tint the document
+  and the chrome together, picked from the toolbar and remembered
+- **One toolbar** — `Ctrl+F` (or the right-click menu) opens a top toolbar
+  holding search, its options row (match case, whole word, regex, and the
+  theme selector), and the contents toggle; the document always starts below
+  it, and one × closes the lot
+- **Search sees pictures** — text drawn inside Mermaid diagrams is highlighted
+  in place; SVG images get their text extracted by the host and matched; every
+  image's alt and title text counts too, with matches boxing the image
+- **Docked table of contents** — a contents rail under the toolbar on the
+  right, toggled from the toolbar, remembered across documents
 - **Share the document, not a dead link** — right-click → "Share document…"
   opens the Windows share sheet with the actual file; "Copy document" puts the
   file itself on the clipboard for pasting into mail or chat
@@ -131,7 +136,7 @@ the behaviour lives:
 ```powershell
 cd tests\web
 npm install
-npm test          # 154 assertions, no browser required
+npm test          # 175 assertions, no browser required
 ```
 
 When you do need to test in Explorer, `scripts\Restart-Explorer.ps1` clears the
@@ -177,11 +182,16 @@ unless noted. Bad values are clamped, never fatal.
 | `AllowRemoteImages` | **0** | Load images from http(s) hosts (badges) — see below |
 | `TaskLists` | 1 | `- [ ]` / `- [x]` as checkboxes |
 | `ShowFrontMatter` | 1 | Show YAML/TOML front matter in a collapsed block |
-| `FollowSystemTheme` | 1 | Follow the Windows apps colour mode |
+| `FollowSystemTheme` | 1 | Follow the Windows apps colour mode (System theme only) |
 | `FixedTheme` | `Light` | `REG_SZ`. Used when `FollowSystemTheme` is 0 |
 | `FontScalePercent` | 100 | Base font size, clamped to 50–300 |
 | `MaximumBytes` | 4194304 | Read cap; larger files are truncated with a notice |
 | `LogLevel` | *(absent)* | 0=Debug…3=Error. Absent disables logging entirely |
+
+The toolbar's theme selector (System plus six named palettes) is a per-user
+choice stored in the preview's own browser profile. `FollowSystemTheme` and
+`FixedTheme` decide what **System** means; a named theme carries its own
+lightness and ignores them.
 
 ### Defaults that are deliberate decisions
 
