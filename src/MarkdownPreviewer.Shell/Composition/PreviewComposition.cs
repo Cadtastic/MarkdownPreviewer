@@ -4,6 +4,7 @@ using MarkdownPreviewer.Application.Preview;
 using MarkdownPreviewer.Infrastructure.Assets;
 using MarkdownPreviewer.Infrastructure.Configuration;
 using MarkdownPreviewer.Infrastructure.Diagnostics;
+using MarkdownPreviewer.Infrastructure.Documents;
 using MarkdownPreviewer.Infrastructure.Shell;
 using MarkdownPreviewer.Rendering.WebView;
 
@@ -54,7 +55,8 @@ internal static class PreviewComposition
         var themes = new ShellAwareThemeProvider(new SystemThemeProvider(log), hostBackgroundColour);
         var trust = new RegistryTrustedDocumentStore(log);
         var revealer = new ShellWindowsDocumentRevealer(log);
-        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, revealer, trust, log);
+        var taskEditor = new MarkdownTaskListEditor(log);
+        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, revealer, taskEditor, trust, log);
 
         return new PreviewSession(surface, settings, themes, log);
     }

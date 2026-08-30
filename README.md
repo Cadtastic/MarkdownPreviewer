@@ -44,6 +44,8 @@ does, but integrated where you already are.
   file itself on the clipboard for pasting into mail or chat
 - **Relative images resolve** — served from the document's own folder over a
   virtual host, never `file://`
+- **Tick things off** — a toolbar toggle makes task-list checkboxes clickable
+  and saves the change straight to the file, one character at a time
 - **Local links turn the page** — click `docs/architecture.md` in a README and
   Explorer navigates to that file and selects it, so the preview follows the
   link; a toolbar switch opens links in their default app instead
@@ -220,6 +222,33 @@ every `on*` handler, and any `javascript:`/`file:` URL — and CSP forbids inlin
 script and network access independently. Set it to 0 for strictly-Markdown
 rendering.
 
+### Editing task checkboxes
+
+The previewer reads; it does not write — with one exception, behind a toggle in
+the toolbar's options row. Turn it on and GFM task lists become clickable, and
+a click saves immediately: no prompt, no confirmation, no notification. The
+tooltip says so before you turn it on.
+
+The write is as narrow as it can be made. Each click makes the host re-read the
+file from disk (never reconstruct it from the rendered page), decode it with its
+own encoding, re-encode it unchanged to prove the round trip is byte-faithful,
+check that the line the page named really is a task marker in the state the page
+thought it was in, and only then flip that one character. Encoding, byte-order
+mark, CRLF or LF, trailing whitespace and every byte either side of the marker
+survive exactly; the file is replaced atomically.
+
+Anything unexpected is refused rather than guessed at — a file whose bytes would
+not survive the round trip, a line that is not a task, a marker that already
+disagrees with the page (the file changed underneath), a read-only or deleted
+file. After a refusal the document re-renders from disk, so the checkbox snaps
+back rather than showing a change that never happened. The toggle disables
+itself, and says why, for items with no file behind them and for documents large
+enough to have been truncated.
+
+Positions are resolved by source line, not by counting checkboxes, so a
+`- [ ] like this` inside a fenced code block neither becomes a checkbox nor
+shifts the real ones below it.
+
 ### Where local links open
 
 A link to a file next to the document — `CHANGELOG.md`, `docs/architecture.md` —
@@ -296,6 +325,11 @@ all local, nothing fetched at runtime:
 
 A previewed file is untrusted input, and the handler treats it that way:
 
+- The handler reads. The single exception is the task-checkbox toggle, off by
+  default, which may change one marker character on one verified line of the
+  document you are looking at — and refuses rather than guesses whenever the
+  file does not match what the page believes (see [Editing task
+  checkboxes](#editing-task-checkboxes)).
 - The page runs under a strict CSP with `connect-src 'none'` — a Markdown file
   cannot phone home. Remote images are additionally blocked host-side unless
   the user opts in, either through `AllowRemoteImages` or by trusting the

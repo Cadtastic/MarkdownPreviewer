@@ -96,6 +96,7 @@ function render(markdown, settings = {}, theme = 'light', envelope = {}) {
       // Pass a different one through `envelope` to model a new selection.
       documentGeneration: 1,
       documentName: 'notes.md',
+      taskEditable: true,
       trusted: false,
       trustable: true,
       ...envelope,
@@ -339,6 +340,99 @@ ok('click routed to the host as openDocument',
    posted.some(m => m.kind === 'openDocument' && m.url === 'https://doc.mdpreview.invalid/notes/docs/guide.md'),
    JSON.stringify(posted));
 ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExternal'));
+
+console.log('\n== editable task checkboxes ==');
+// Off by default, and a checkbox click is a write, so the page must be exact
+// about which source line it names.
+const taskEditToggle = window.document.getElementById('task-edit');
+const taskDoc = '# Todo\n\n- [ ] first\n- [x] second\n';
+
+c = render(taskDoc);
+ok('checkboxes are read-only by default',
+   [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled));
+ok('the toggle starts unpressed', taskEditToggle.getAttribute('aria-pressed') === 'false');
+ok('the tooltip discloses the save behaviour',
+   taskEditToggle.title.includes('saves the file immediately'), taskEditToggle.title);
+
+posted.length = 0;
+c.querySelector('li.mdp-task input').click();
+ok('a click while read-only writes nothing',
+   !posted.some(m => m.kind === 'toggleTask'), JSON.stringify(posted));
+
+taskEditToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling makes the boxes editable',
+   [...c.querySelectorAll('li.mdp-task input')].every(b => !b.disabled));
+ok('the choice is persisted', window.localStorage.getItem('mdp.editTasks') === '1');
+ok('the tooltip now offers the way back',
+   taskEditToggle.title.includes('read-only'), taskEditToggle.title);
+
+// Line numbers are what the host writes against, so they are the thing to pin.
+posted.length = 0;
+const taskBoxes = c.querySelectorAll('li.mdp-task input');
+taskBoxes[0].click();
+ok('checking names its own source line and state',
+   posted.some(m => m.kind === 'toggleTask' && m.line === 2 && m.checked === true),
+   JSON.stringify(posted));
+
+posted.length = 0;
+taskBoxes[1].click();
+ok('unchecking names the second line',
+   posted.some(m => m.kind === 'toggleTask' && m.line === 3 && m.checked === false),
+   JSON.stringify(posted));
+
+// Front matter is stripped before parsing, so its lines have to be added back
+// or every edit would land that many lines too early in the file.
+posted.length = 0;
+c = render('---\ntitle: T\ntags: [a]\n---\n\n- [ ] after front matter\n');
+c.querySelector('li.mdp-task input').click();
+ok('front-matter lines are counted back in',
+   posted.some(m => m.kind === 'toggleTask' && m.line === 5),
+   JSON.stringify(posted));
+
+// A task inside a fenced block is not a checkbox, so it must not shift the
+// line of the real one below it.
+posted.length = 0;
+c = render('```md\n- [ ] decoy\n```\n\n- [ ] real\n');
+ok('the decoy in the fence is not a checkbox', c.querySelectorAll('li.mdp-task').length === 1);
+c.querySelector('li.mdp-task input').click();
+ok('the real task still names its own line',
+   posted.some(m => m.kind === 'toggleTask' && m.line === 4), JSON.stringify(posted));
+
+// Both hazards at once, and the exact document the C# editor is tested against
+// (Toggle_AgreesWithTheLineNumbersThePageSends). The two suites share this
+// fixture on purpose: if either side's line arithmetic drifts, one of them
+// fails rather than the pair silently disagreeing in production.
+posted.length = 0;
+c = render('---\ntitle: Demo\n---\n\n# Tasks\n\n```md\n- [ ] decoy in a fence\n```\n\n- [ ] alpha\n- [x] beta\n');
+ok('front matter and a fence together still land on the right line',
+   posted.length === 0 && c.querySelectorAll('li.mdp-task').length === 2);
+c.querySelectorAll('li.mdp-task input')[0].click();
+ok('the shared fixture names line 10',
+   posted.some(m => m.kind === 'toggleTask' && m.line === 10 && m.checked === true),
+   JSON.stringify(posted));
+
+// A document with no file behind it cannot be written to.
+c = render(taskDoc, {}, 'light', { taskEditable: false });
+ok('an unwritable document disables the toggle', taskEditToggle.disabled === true);
+ok('and says why', taskEditToggle.title.includes('cannot be edited'), taskEditToggle.title);
+ok('its checkboxes stay read-only',
+   [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled));
+
+posted.length = 0;
+c.querySelector('li.mdp-task input').click();
+ok('and a click on one writes nothing', !posted.some(m => m.kind === 'toggleTask'));
+
+// Back to an editable document: the preference survived, so the boxes come
+// back editable without touching the toggle again.
+c = render(taskDoc);
+ok('the preference still holds on the next editable document',
+   taskEditToggle.disabled === false &&
+   [...c.querySelectorAll('li.mdp-task input')].every(b => !b.disabled));
+
+taskEditToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling off makes them read-only again',
+   [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled) &&
+   window.localStorage.getItem('mdp.editTasks') === '0');
 
 console.log('\n== contents rail ==');
 const tocEl = window.document.getElementById('toc');

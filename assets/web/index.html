@@ -120,6 +120,18 @@
         <span class="mdp-sr-only">Where local links open</span>
       </button>
 
+      <!-- Whether task-list checkboxes accept clicks. Off, the preview is
+           read-only as ever; on, checking a box saves the file immediately and
+           silently — the tooltip is where that is said, per design. -->
+      <button id="task-edit" class="mdp-toolbar-button mdp-taskedit-toggle" type="button"
+              aria-pressed="false" title="">
+        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" />
+          <path d="M9 11l3 3l8 -8" />
+        </svg>
+        <span class="mdp-sr-only">Edit task checkboxes</span>
+      </button>
+
       <!-- Off by default, and it stays off until the user answers a dialog.
            The slash is part of the glyph rather than a separate "off" icon, so
            the two states are the same shape and read as one switch. -->

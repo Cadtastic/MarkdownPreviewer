@@ -409,6 +409,22 @@ body {
 .mdp-linkmode-toggle[aria-pressed="true"] .mdp-lm-locate { display: none; }
 .mdp-linkmode-toggle[aria-pressed="false"] .mdp-lm-app { display: none; }
 
+/* --- task edit toggle ----------------------------------------------------------- */
+
+/* A true on/off toggle (unlike the link-mode switch): lit while checkboxes are
+   editable, plain while the preview is read-only. */
+.mdp-taskedit-toggle[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+
+/* An editable checkbox should feel like a control, not decoration. */
+.markdown-body li.mdp-task input[type="checkbox"]:not(:disabled) {
+  cursor: pointer;
+}
+
 /* --- trust toggle ------------------------------------------------------------- */
 
 /*

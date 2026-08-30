@@ -13,6 +13,34 @@ leaving the pane.
 
 ### Added
 
+- **Editable task checkboxes.** A toggle in the toolbar's options row makes GFM
+  task lists clickable. Checking or unchecking a box writes the change to the
+  file immediately, with no prompt and no confirmation — the toggle's tooltip is
+  where that is disclosed, before it is turned on. The preference is per user,
+  not per document.
+
+  This is the previewer's only write path, and it is deliberately the narrowest
+  one available. The file is never regenerated from the rendered page: on each
+  click the host re-reads it from disk, decodes it with its own encoding,
+  re-encodes it unchanged to prove the round trip is byte-faithful, verifies
+  that the named line really is a task marker in the state the page believed,
+  and only then flips that single character. Everything else — encoding, BOM,
+  CRLF or LF, trailing whitespace, the bytes either side of the marker — comes
+  through untouched, and the write goes via a temp file and an atomic replace.
+
+  Anything unexpected refuses rather than guesses: a file whose bytes would not
+  survive the round trip, a line that is not a task, a marker already in the
+  requested state (the file changed under the preview), a read-only or vanished
+  file. A refusal re-renders from what is actually on disk, so the checkbox
+  snaps back to the truth instead of showing a change that never landed. The
+  toggle disables itself, and says why, for documents with no file behind them
+  and for truncated ones.
+
+  Checkbox positions are resolved by source line rather than by counting boxes,
+  so a `- [ ] like this` inside a fenced code block neither becomes a checkbox
+  nor shifts the real ones below it, and front matter the parser never sees is
+  counted back in.
+
 - **Follow local links in Explorer.** A mode switch in the toolbar's options
   row decides where a click on a link to a nearby file goes. The default is to
   steer File Explorer itself: the hosting tab navigates to the file's folder
