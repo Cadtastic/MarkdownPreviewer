@@ -53,7 +53,8 @@ internal static class PreviewComposition
         var settings = new RegistryRenderSettingsProvider(log);
         var themes = new ShellAwareThemeProvider(new SystemThemeProvider(log), hostBackgroundColour);
         var trust = new RegistryTrustedDocumentStore(log);
-        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, trust, log);
+        var revealer = new ShellWindowsDocumentRevealer(log);
+        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, revealer, trust, log);
 
         return new PreviewSession(surface, settings, themes, log);
     }

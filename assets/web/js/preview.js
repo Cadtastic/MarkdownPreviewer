@@ -14,6 +14,7 @@
  *   page -> host  { kind: "failed", token, message }
  *   page -> host  { kind: "openExternal", url }
  *   page -> host  { kind: "trustDocument", trusted }
+ *   page -> host  { kind: "openDocument", url, mode }   mode: "navigate" | "app"
  *
  * Design notes worth knowing before editing:
  *
@@ -57,6 +58,7 @@
     imageText: Object.create(null),  // img src -> text the host extracted from it
     documentName: '',         // shown in the trust dialog so it can name its subject
     documentGeneration: 0,    // changes only when the reader moves to another file
+    linkMode: 'navigate',     // where local links go: 'navigate' Explorer, or 'app'ly default app
     trusted: false,           // this document may load resources from the internet
     trustable: false          // ...and it has a path to record that grant against
   };
@@ -600,6 +602,44 @@
     state.trusted = trusted === true;
     syncTrustToggle();
     post({ kind: 'trustDocument', trusted: state.trusted });
+  }
+
+  // -------------------------------------------------------- link destination ---
+
+  /*
+   * Where a click on a local link goes. Two modes, both legitimate, so this is
+   * a mode switch rather than an on/off toggle:
+   *
+   *   navigate  the host steers File Explorer to the file and selects it, so
+   *             the preview follows the link. Works for any file that exists -
+   *             selecting a file executes nothing.
+   *   app       the file opens in its default application (the host applies
+   *             its inert-type allowlist, as it always has).
+   *
+   * The page only declares the mode per click; the host stays the authority on
+   * what actually happens to the path.
+   */
+  var linkMode = { toggle: document.getElementById('link-mode') };
+
+  function readLinkModePreference() {
+    try {
+      return window.localStorage.getItem('mdp.linkMode') === 'app' ? 'app' : 'navigate';
+    } catch (_) { return 'navigate'; }
+  }
+
+  function storeLinkModePreference() {
+    try { window.localStorage.setItem('mdp.linkMode', state.linkMode); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function syncLinkModeToggle() {
+    if (!linkMode.toggle) { return; }
+
+    var app = state.linkMode === 'app';
+    linkMode.toggle.setAttribute('aria-pressed', app ? 'true' : 'false');
+    linkMode.toggle.title = app
+      ? 'Local links open in their default app. Click to reveal the file in File Explorer instead.'
+      : 'Local links reveal the file in File Explorer. Click to open in the default app instead.';
   }
 
   // ------------------------------------------------------------ find in page ---
@@ -1396,9 +1436,10 @@
     event.preventDefault();
 
     // A link to a sibling of the previewed document: the host resolves it to
-    // the real file and opens it with its default application.
+    // the real file and, depending on the toolbar's link-mode switch, either
+    // reveals it in File Explorer or opens it in its default application.
     if (href.indexOf(DOC_ORIGIN + '/') === 0) {
-      post({ kind: 'openDocument', url: href });
+      post({ kind: 'openDocument', url: href, mode: state.linkMode });
       return;
     }
 
@@ -1577,6 +1618,19 @@
   if (trust.dialog) {
     trust.dialog.addEventListener('click', function (event) {
       if (event.target === trust.dialog) { closeTrustDialog(); }
+    });
+  }
+
+  // --- link destination ---------------------------------------------------------------
+
+  state.linkMode = readLinkModePreference();
+  syncLinkModeToggle();
+
+  if (linkMode.toggle) {
+    linkMode.toggle.addEventListener('click', function () {
+      state.linkMode = state.linkMode === 'app' ? 'navigate' : 'app';
+      storeLinkModePreference();
+      syncLinkModeToggle();
     });
   }
 

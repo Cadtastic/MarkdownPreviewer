@@ -7,10 +7,35 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [1.4.0] — 2026-08-30
 
-The toolbar is there when you arrive, and a document you wrote yourself can be
-let onto the network.
+The toolbar is there when you arrive, a document you wrote yourself can be let
+onto the network, and a link to the file next door turns the page instead of
+leaving the pane.
 
 ### Added
+
+- **Follow local links in Explorer.** A mode switch in the toolbar's options
+  row decides where a click on a link to a nearby file goes. The default is to
+  steer File Explorer itself: the hosting tab navigates to the file's folder
+  and selects it, which makes the linked file the new preview — so a README's
+  link to `CHANGELOG.md` reads like a page turn rather than a detour through
+  another program. The other mode is the previous behaviour, opening the file
+  in its default application. The glyph shows what a click will do right now —
+  a crosshair for reveal, an arrow leaving a box for open — because neither
+  mode is the "off" one. The choice persists.
+
+  Revealing works for any file that exists, extension or not, since selecting a
+  file executes nothing. Opening in the default app keeps its inert-type
+  allowlist: a document must not be one click away from running a script it
+  shipped alongside itself. A link to a folder navigates into it; a link to
+  something that is not there does nothing, as before.
+
+  The hosting tab is identified by two facts together — the Explorer window our
+  preview pane lives inside, and the folder that window is currently showing —
+  which is what picks the right tab out of a Windows 11 window that has several.
+  When no Explorer tab hosts the preview (the dev harness, Outlook's reading
+  pane, a document inside a .zip), a folder window is opened with the file
+  selected instead. A link to a file in the folder already on screen skips
+  navigation entirely and just moves the selection.
 
 - **Trust external links.** A globe toggle in the toolbar's options row lets a
   single document load images from the internet, which are otherwise blocked
@@ -64,6 +89,7 @@ let onto the network.
   Unicode characters, so the controls are a uniform size and optically match
   each other rather than the font they were drawn in. The Contents chevron is
   one icon rotated rather than two glyphs swapped.
+
 ### Fixed
 
 - **Clicking any in-page anchor silently killed the page's voice.** The host

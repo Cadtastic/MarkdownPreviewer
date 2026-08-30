@@ -399,6 +399,16 @@ body {
   color: var(--crit);
 }
 
+/* --- link destination toggle ---------------------------------------------------- */
+
+/*
+ * Two modes, not on/off: the button always shows the glyph for what a click on
+ * a link will do right now. Neither state is highlighted the way a pressed
+ * toggle is, because neither is the "off" one.
+ */
+.mdp-linkmode-toggle[aria-pressed="true"] .mdp-lm-locate { display: none; }
+.mdp-linkmode-toggle[aria-pressed="false"] .mdp-lm-app { display: none; }
+
 /* --- trust toggle ------------------------------------------------------------- */
 
 /*
