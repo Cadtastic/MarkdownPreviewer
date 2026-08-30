@@ -6,6 +6,9 @@
 
 :root {
   --mdp-gutter: 24px;
+  /* What the gutter shrinks to when the document is expanded: enough that text
+     is not against the pane edge, little enough to be worth the toggle. */
+  --mdp-gutter-tight: 8px;
   --mdp-font-scale: 1;
 
   /* One number for the contents rail's width and for the toolbar group that
@@ -235,7 +238,7 @@ body {
 
 .mdp-find-actions {
   position: absolute;
-  right: 3px;
+  right: 5px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -283,6 +286,10 @@ body {
 .mdp-find-cycle {
   display: flex;
   align-items: stretch;
+  /* Explicitly shorter than the field. Margin cannot do this job: the actions
+     strip is centred on the input, so symmetric margins leave the control the
+     same height and still touching both borders. */
+  height: 20px;
   border: 1px solid var(--line);
   border-radius: 4px;
   overflow: hidden;
@@ -298,7 +305,7 @@ body {
   align-items: center;
   justify-content: center;
   border: 0;
-  padding: 0 1px;
+  padding: 0 3px;
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -317,7 +324,17 @@ body {
   outline-offset: -2px;
 }
 
-.mdp-icon-sm { width: 20px; height: 20px; }
+/* Sized to sit inside the search field rather than to match the toolbar's own
+   24px icons, which would not fit between its borders. */
+.mdp-icon-sm { width: 16px; height: 16px; }
+
+/* The view controls and the close button, packed to the right of the group so
+   Contents keeps the group's left edge and its alignment with the rail. */
+.mdp-toolbar-view {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
 
 .mdp-toolbar-button {
   display: inline-flex;
@@ -500,6 +517,8 @@ body {
  */
 .markdown-body.mdp-expanded {
   max-width: none;
+  padding-left: var(--mdp-gutter-tight);
+  padding-right: var(--mdp-gutter-tight);
 }
 
 /* --- task edit toggle ----------------------------------------------------------- */

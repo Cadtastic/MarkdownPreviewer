@@ -751,7 +751,7 @@ window.document.getElementById('find-options').dispatchEvent(
   new window.FocusEvent('focusin', { bubbles: true }));
 ok('focus shows the tooltip', !isHidden(tipEl));
 ok('the label is its own line',
-   tipEl.querySelector('b')?.textContent === 'Search options',
+   tipEl.querySelector('b')?.textContent === 'Options',
    tipEl.textContent);
 
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -1036,9 +1036,17 @@ console.log('\n== toolbar geometry ==');
 // button's left edge on the rail's left edge.
 const toolbarRow = window.document.querySelector('.mdp-toolbar-row');
 ok('close button is the last control in the row',
-   toolbarRow.querySelector('.mdp-toolbar-right').lastElementChild.id === 'toolbar-close');
+   [...toolbarRow.querySelectorAll('button')].pop().id === 'toolbar-close');
 ok('Contents button leads the right-hand group',
    toolbarRow.querySelector('.mdp-toolbar-right').firstElementChild.id === 'toc-toggle');
+// The view controls sit between Contents and the close button, right-aligned,
+// rather than trailing the search field.
+ok('options and expand sit between Contents and close',
+   [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(',')
+     === 'find-options,expand-view,toolbar-close',
+   [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(','));
+ok('neither of them trails the search field',
+   toolbarRow.querySelector('.mdp-find-field ~ button') === null);
 // The alignment is only durable if both widths come off the same token, so
 // that is what is asserted -- jsdom does not resolve custom properties, and a
 // resolved pixel figure would not prove they are tied together anyway.

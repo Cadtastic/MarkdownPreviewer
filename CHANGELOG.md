@@ -13,12 +13,18 @@ leaving the pane.
 
 ### Added
 
-- **Expand the preview to the full pane width.** A toggle in the options row
-  drops the document's centred reading measure so it fills the pane edge to
-  edge, which is what a wide table or a large diagram wants; toggling back
-  restores the previous width exactly. The width has one definition, in the
-  stylesheet, so there is no second copy to drift out of step. The glyph shows
-  which way the next click goes, and the choice persists across documents.
+- **Expand the preview to the full pane width.** A toggle in the view controls
+  gives the document every pixel the pane has: the centred reading measure goes
+  and the reading gutter shrinks. Toggling back restores the previous width
+  exactly, and the width keeps one definition in the stylesheet so there is no
+  second copy to drift out of step. The glyph shows which way the next click
+  goes, and the choice persists across documents.
+
+  What it cannot do is make Explorer's preview pane itself any wider — that
+  splitter belongs to Explorer. On a pane narrower than the 980px reading
+  measure the document was already filling the width, so expanding reclaims the
+  gutter and little else; the toggle earns its place on a wide pane, or beside
+  a table that wants every pixel.
 
 - **Editable task checkboxes.** A toggle in the toolbar's options row makes GFM
   task lists clickable. Checking or unchecking a box writes the change to the
@@ -112,6 +118,12 @@ leaving the pane.
   uses a themed tooltip drawn from the same palette tokens as the rest of the
   chrome, with a label on the first line and the detail beneath it. Keyboard
   focus raises them as well as hover, and `Esc` dismisses them.
+
+- **The options and expand controls moved to the right of the bar**, between
+  the Contents toggle and the close button, where the view controls belong —
+  they were trailing the search field, which read as though they were part of
+  it. The gear's tooltip is now just "Options": the row it opens has held
+  document and view settings as well as search ones for a while.
 
 - **Previous/next match moved inside the search field**, as a split pair at its
   right edge beside the match count, and they appear only when there are at
