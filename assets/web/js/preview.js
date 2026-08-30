@@ -32,7 +32,7 @@
 
   // Reported to the host in the "ready" handshake and logged, so a mismatch
   // between the installed binaries and the render assets is visible.
-  var VERSION = '1.1.1';
+  var VERSION = '1.2.0';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
@@ -529,9 +529,53 @@
     count: document.getElementById('find-count'),
     position: null,          // null = default spot, and the document reserves a strip
     marks: [],
+    overlays: [],            // highlight boxes drawn over SVG (diagram) text
     index: -1,
-    timer: 0
+    timer: 0,
+    opts: { matchCase: false, matchWord: false, regex: false }
   };
+
+  // ----------------------------------------------------- search options ---
+
+  /*
+   * The three options are independent and combine freely.
+   *
+   * Whole-word plus regular expression is the only pairing with a wrinkle: the
+   * pattern is wrapped as \\b(?:...)\\b, so a pattern that begins or ends
+   * with a non-word character can never match. That is how every editor with
+   * both switches behaves; the tooltip says so rather than disabling the pair.
+   */
+  function readFindOptions() {
+    try {
+      var raw = JSON.parse(window.localStorage.getItem('mdp.findOpts') || 'null');
+      if (!raw) { return; }
+      find.opts.matchCase = raw.matchCase === true;
+      find.opts.matchWord = raw.matchWord === true;
+      find.opts.regex = raw.regex === true;
+    } catch (_) { /* defaults stand */ }
+  }
+
+  function storeFindOptions() {
+    try {
+      window.localStorage.setItem('mdp.findOpts', JSON.stringify(find.opts));
+    } catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /* Returns a global RegExp, or null when the user's own pattern is invalid. */
+  function buildFindPattern(query) {
+    var source = find.opts.regex ? query : escapeRegExp(query);
+    if (find.opts.matchWord) { source = '\\b(?:' + source + ')\\b'; }
+
+    try {
+      return new RegExp(source, find.opts.matchCase ? 'g' : 'gi');
+    } catch (_) {
+      return null;
+    }
+  }
 
   function openFind() {
     find.bar.hidden = false;
@@ -544,6 +588,9 @@
   function closeFind() {
     find.bar.hidden = true;
     document.body.classList.remove('mdp-find-reserved');
+
+    var panel = document.getElementById('find-opts');
+    if (panel) { panel.hidden = true; }
     clearFindMarks();
     find.count.textContent = '';
   }
@@ -645,12 +692,65 @@
       var mark = find.marks[i];
       var parent = mark.parentNode;
       if (!parent) { continue; }
-      parent.replaceChild(document.createTextNode(mark.textContent), mark);
-      parent.normalize();   // merge the split text nodes back together
+
+      if (mark.nodeName === 'MARK') {
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+        parent.normalize();   // merge the split text nodes back together
+      } else {
+        parent.removeChild(mark);   // a diagram overlay; nothing to splice back
+      }
     }
 
     find.marks = [];
+    find.overlays = [];
     find.index = -1;
+  }
+
+  /*
+   * Text drawn inside a diagram cannot be wrapped in <mark>.
+   *
+   * An <svg> subtree renders only SVG elements, so an HTML <mark> spliced into
+   * a <text> would make the label disappear. Instead the match is measured
+   * with a Range and a box is drawn over it, positioned in document
+   * coordinates so it scrolls with the diagram. The box is what goes into
+   * find.marks, which keeps counting, cycling and scroll-into-view identical
+   * for diagram and prose matches.
+   *
+   * Diagrams scale with the pane (useMaxWidth), so a resize re-runs the search
+   * rather than leaving the boxes behind.
+   */
+  function addDiagramHighlight(node, start, end) {
+    var rect = null;
+
+    try {
+      var range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      rect = range.getBoundingClientRect();
+    } catch (_) { /* measured below instead */ }
+
+    // Ranges over SVG text are not measurable everywhere; fall back to the
+    // whole label, which still boxes the right diagram node.
+    if (!rect || (!rect.width && !rect.height)) {
+      var owner = node.parentNode;
+      if (owner && owner.getBoundingClientRect) {
+        try { rect = owner.getBoundingClientRect(); } catch (_) { rect = null; }
+      }
+    }
+
+    var box = document.createElement('div');
+    box.className = 'mdp-find mdp-find-overlay';
+
+    if (rect) {
+      box.style.left = (rect.left + window.scrollX) + 'px';
+      box.style.top = (rect.top + window.scrollY) + 'px';
+      box.style.width = rect.width + 'px';
+      box.style.height = rect.height + 'px';
+    }
+
+    document.body.appendChild(box);
+    find.marks.push(box);
+    find.overlays.push(box);
   }
 
   function runFind(query) {
@@ -658,18 +758,28 @@
 
     query = String(query || '');
     if (query.length === 0) {
+      find.bar.classList.remove('mdp-find-invalid');
       find.count.textContent = '';
       return;
     }
 
-    var needle = query.toLowerCase();
+    var pattern = buildFindPattern(query);
+    if (!pattern) {
+      // Only reachable in regex mode: the user is mid-pattern, or wrong.
+      find.bar.classList.add('mdp-find-invalid');
+      find.count.textContent = 'bad pattern';
+      return;
+    }
+    find.bar.classList.remove('mdp-find-invalid');
 
     // Snapshot first: wrapping matches mutates the tree under the walker.
     //
-    // The filter is not optional. A rendered mermaid diagram injects a <style>
-    // block full of "#mermaid-…" selectors, and MathJax emits similar
-    // machinery; counting those invisible text nodes made a search for
-    // "mermaid" report 146 matches on a document that visibly contains four.
+    // The filter is not optional, but it is narrower than it looks. A rendered
+    // mermaid diagram injects a <style> block full of "#mermaid-..." selectors
+    // and MathJax emits similar machinery; counting those invisible nodes made
+    // a search for "mermaid" report 146 matches on a document that visibly
+    // contains four. Only those wrappers are skipped -- <text> and <tspan>
+    // inside a diagram hold real, visible labels and are searched.
     var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
       acceptNode: function (node) {
         if (!node.nodeValue || node.nodeValue.length === 0) {
@@ -678,8 +788,9 @@
 
         for (var el = node.parentNode; el && el !== content; el = el.parentNode) {
           var name = el.nodeName.toUpperCase();
-          if (name === 'STYLE' || name === 'SCRIPT' || name === 'SVG' ||
-              name === 'MJX-CONTAINER' || name === 'TITLE') {
+          if (name === 'STYLE' || name === 'SCRIPT' || name === 'MJX-CONTAINER' ||
+              name === 'TITLE' || name === 'DESC' || name === 'DEFS' ||
+              name === 'METADATA') {
             return NodeFilter.FILTER_REJECT;
           }
         }
@@ -693,14 +804,30 @@
 
     for (var n = 0; n < textNodes.length && find.marks.length < MAX_FIND_MATCHES; n++) {
       var node = textNodes[n];
-      var haystack = node.textContent.toLowerCase();
-      var from = 0;
-      var at;
+      var parent = node.parentNode;
+      var inDiagram = parent && parent.closest && parent.closest('svg') !== null;
 
-      while ((at = haystack.indexOf(needle, from)) >= 0 &&
-             find.marks.length < MAX_FIND_MATCHES) {
-        var matchNode = node.splitText(at);
-        node = matchNode.splitText(query.length);
+      if (inDiagram) {
+        // No splitting: measure every match in place, then draw the boxes.
+        pattern.lastIndex = 0;
+        var m;
+        while ((m = pattern.exec(node.nodeValue)) !== null &&
+               find.marks.length < MAX_FIND_MATCHES) {
+          if (m[0].length === 0) { pattern.lastIndex++; continue; }
+          addDiagramHighlight(node, m.index, m.index + m[0].length);
+        }
+
+        continue;
+      }
+
+      var rest = node;
+      while (find.marks.length < MAX_FIND_MATCHES) {
+        pattern.lastIndex = 0;
+        var hit = pattern.exec(rest.nodeValue);
+        if (!hit || hit[0].length === 0) { break; }
+
+        var matchNode = rest.splitText(hit.index);
+        rest = matchNode.splitText(hit[0].length);
 
         var mark = document.createElement('mark');
         mark.className = 'mdp-find';
@@ -708,8 +835,6 @@
         mark.appendChild(matchNode);
 
         find.marks.push(mark);
-        haystack = node.textContent.toLowerCase();
-        from = 0;
       }
     }
 
@@ -911,8 +1036,16 @@
     catch (error) { warnings.push('Contents: ' + error.message); }
 
     // The old document's marks died with its innerHTML; re-run against the new
-    // one so an open find bar keeps working across selections.
+    // one so an open find bar keeps working across selections. Diagram overlays
+    // live on <body>, outside the replaced subtree, so they must be removed by
+    // hand rather than left to leak one set per selection.
+    for (var ov = 0; ov < find.overlays.length; ov++) {
+      var box = find.overlays[ov];
+      if (box.parentNode) { box.parentNode.removeChild(box); }
+    }
+
     find.marks = [];
+    find.overlays = [];
     find.index = -1;
     if (!find.bar.hidden && find.input.value) { runFind(find.input.value); }
 
@@ -1056,6 +1189,18 @@
 
     if (event.key === 'Escape' && !find.bar.hidden) {
       event.preventDefault();
+
+      // Esc closes the options panel first if it is open, so a stray Esc does
+      // not throw away the search along with it.
+      var panel = document.getElementById('find-opts');
+      if (panel && !panel.hidden) {
+        panel.hidden = true;
+        document.getElementById('find-options').setAttribute('aria-expanded', 'false');
+        document.getElementById('find-options').classList.remove('mdp-active');
+        find.input.focus();
+        return;
+      }
+
       closeFind();
       return;
     }
@@ -1100,10 +1245,59 @@
   find.position = readFindPosition();
   document.getElementById('find-grip').addEventListener('pointerdown', beginFindDrag);
 
+  // --- search options -------------------------------------------------------
+
+  readFindOptions();
+
+  var findOptsPanel = document.getElementById('find-opts');
+  var findOptsButton = document.getElementById('find-options');
+  var optionBoxes = {
+    matchCase: document.getElementById('find-case'),
+    matchWord: document.getElementById('find-word'),
+    regex: document.getElementById('find-regex')
+  };
+
+  Object.keys(optionBoxes).forEach(function (key) {
+    var box = optionBoxes[key];
+    box.checked = find.opts[key];
+    box.addEventListener('change', function () {
+      find.opts[key] = box.checked;
+      storeFindOptions();
+      if (find.input.value) { runFind(find.input.value); }
+      find.input.focus();
+    });
+  });
+
+  function setFindOptionsOpen(open) {
+    findOptsPanel.hidden = !open;
+    findOptsButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    findOptsButton.classList.toggle('mdp-active', open);
+  }
+
+  findOptsButton.addEventListener('click', function (event) {
+    event.stopPropagation();
+    setFindOptionsOpen(findOptsPanel.hidden);
+  });
+
+  // Click-away closes the panel, but not clicks inside the bar itself -- the
+  // checkboxes live there, and so does the button that opened it.
+  document.addEventListener('mousedown', function (event) {
+    if (findOptsPanel.hidden) { return; }
+    if (!find.bar.contains(event.target)) { setFindOptionsOpen(false); }
+  });
+
   // A stored position can end up off-screen when the pane is narrowed; re-clamp
   // so the bar is always reachable.
   window.addEventListener('resize', function () {
-    if (!find.bar.hidden) { applyFindPosition(); }
+    if (find.bar.hidden) { return; }
+    applyFindPosition();
+
+    // Diagrams scale with the pane (useMaxWidth), so any overlay drawn over one
+    // is now in the wrong place. Re-running is cheaper than tracking each box.
+    if (find.overlays.length > 0 && find.input.value) {
+      window.clearTimeout(find.timer);
+      find.timer = window.setTimeout(function () { runFind(find.input.value); }, 150);
+    }
   });
 
   // --- table of contents ----------------------------------------------------

@@ -35,7 +35,7 @@ Unicode True
 !define PRODUCT_NAME       "Markdown Preview Handler"
 !define PRODUCT_SHORTNAME  "MarkdownPreviewer"
 ; Keep in step with Directory.Build.props, assets\web\js\preview.js and CHANGELOG.md.
-!define PRODUCT_VERSION    "1.1.1"
+!define PRODUCT_VERSION    "1.2.0"
 !define PRODUCT_PUBLISHER  "Addam Boord"
 !define PRODUCT_URL        "https://github.com/Cadtastic/MarkdownPreviewer"
 !define README_URL         "${PRODUCT_URL}/blob/main/README.md"

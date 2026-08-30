@@ -206,11 +206,25 @@ find UI along with printing, DevTools and the rest. The DOM still receives the
 keystroke, so `Ctrl+F` is handled in `preview.js`, which also buys a match
 counter and highlight styling that match the document's theme.
 
-The one non-obvious part is the tree walker's filter. A rendered mermaid diagram
-injects a `<style>` block full of `#mermaid-…` selectors and MathJax emits
-similar machinery; without excluding `<style>`, `<script>`, `<svg>` and MathJax
-containers, searching for "mermaid" reported 146 matches on a document that
-visibly contains two.
+The tree walker's filter is the fiddly part, and it has been wrong in both
+directions. A rendered mermaid diagram injects a `<style>` block full of
+`#mermaid-…` selectors and MathJax emits similar machinery; counting those
+made a search for "mermaid" report 146 matches on a document that visibly
+contains two. Excluding all of `<svg>` fixed that and created the opposite
+bug — a diagram's *visible* labels are `<text>` inside that `<svg>`, so
+searching for a term plainly on screen in a chart found nothing. The filter now
+skips only the wrappers that hold no visible text (`style`, `script`, `title`,
+`desc`, `defs`, `metadata`, and MathJax containers).
+
+A match inside a diagram cannot be highlighted the way prose is: an HTML
+`<mark>` spliced into an `<svg>` does not render, and would make the label
+vanish. Those matches are measured with a `Range` and boxed by an absolutely
+positioned overlay in document coordinates, which scrolls with the diagram. The
+overlay is what goes into the match list, so counting, cycling and
+scroll-into-view need no special case. Two consequences worth knowing: the
+overlays live on `<body>` rather than under `#content`, so a re-render has to
+remove them by hand or they leak one set per selection; and diagrams scale with
+the pane, so a resize re-runs the search rather than leaving the boxes behind.
 
 ### The floating panels hide with `hidden`, and the CSS has to allow it
 

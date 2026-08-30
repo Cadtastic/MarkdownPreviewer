@@ -28,7 +28,9 @@ does, but integrated where you already are.
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
 - **Light/dark theming** — follows the Windows app colour mode, or pin one
 - **Find in page** — `Ctrl+F` searches the rendered document, highlights every
-  match, and cycles with `Enter` / `Shift+Enter` (or `F3`); `Esc` closes
+  match, and cycles with `Enter` / `Shift+Enter` (or `F3`); `Esc` closes. Match
+  case, whole word and regular expression sit behind the gear, and text drawn
+  inside Mermaid diagrams is searched and boxed like any other match
 - **Floating table of contents** — collapse it to a pill with its chevron,
   hide it with its × button, bring it back from the right-click menu
 - **Share the document, not a dead link** — right-click → "Share document…"
@@ -129,7 +131,7 @@ the behaviour lives:
 ```powershell
 cd tests\web
 npm install
-npm test          # 125 assertions, no browser required
+npm test          # 154 assertions, no browser required
 ```
 
 When you do need to test in Explorer, `scripts\Restart-Explorer.ps1` clears the

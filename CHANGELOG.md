@@ -5,6 +5,35 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-08-30
+
+Search grew the switches people expect from an editor, and learned to look
+inside rendered diagrams.
+
+### Added
+
+- **Search options**, behind a gear in the find bar: **match case**, **match
+  whole word**, and **regular expression**. The three are independent and
+  combine freely, and the choices persist. Combining whole word with a regular
+  expression wraps the pattern as `\b(?:pattern)\b`, so a pattern that begins
+  or ends with a non-word character — `\d+\.`, `-foo` — cannot match; that is
+  inherent to word boundaries and matches how editors with both switches
+  behave. An unfinished or invalid pattern says `bad pattern` on the bar
+  instead of silently reporting nothing found.
+- **Text inside rendered diagrams is searchable.** A Mermaid diagram draws its
+  labels as SVG, which the search skipped entirely — searching a document for
+  `Domain` found nothing even with `Domain` plainly visible in the chart. Those
+  labels are now matched, counted, and reachable with the cycle arrows like any
+  other match. They cannot be wrapped in `<mark>` (an HTML element inside
+  `<svg>` does not render), so each one is boxed by a highlight drawn over it,
+  which follows the diagram as the page scrolls and is redrawn if the pane is
+  resized.
+
+### Changed
+
+- **The close buttons on the find bar and the contents panel are larger.** At
+  the size of the cycle arrows beside them they were an easy thing to miss.
+
 ## [1.1.1] — 2026-08-30
 
 Fixes [#1](https://github.com/Cadtastic/MarkdownPreviewer/issues/1). The find
@@ -151,6 +180,7 @@ Initial release.
 - NSIS installer with .NET and WebView2 prerequisite detection, plus
   registration, diagnostic and Explorer-restart scripts.
 
+[1.2.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.2.0
 [1.1.1]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.0.0

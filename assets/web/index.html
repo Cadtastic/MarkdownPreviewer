@@ -58,7 +58,17 @@
     <span id="find-count" class="mdp-find-count"></span>
     <button id="find-prev" class="mdp-find-button" type="button" title="Previous match (Shift+Enter)">▲</button>
     <button id="find-next" class="mdp-find-button" type="button" title="Next match (Enter)">▼</button>
-    <button id="find-close" class="mdp-find-button" type="button" title="Close (Esc)">×</button>
+    <button id="find-options" class="mdp-find-button" type="button"
+            title="Search options" aria-expanded="false" aria-controls="find-opts">⚙</button>
+    <button id="find-close" class="mdp-find-button mdp-close-button" type="button" title="Close (Esc)">×</button>
+
+    <!-- Independent toggles; any combination is valid. Inside the bar so it
+         travels with it when dragged. -->
+    <div id="find-opts" class="mdp-find-options" hidden>
+      <label><input type="checkbox" id="find-case" /> Match case</label>
+      <label><input type="checkbox" id="find-word" /> Match whole word</label>
+      <label title="Combines with the others. With whole word the pattern is wrapped as \b(?:pattern)\b, so one starting or ending with a non-word character will not match."><input type="checkbox" id="find-regex" /> Regular expression</label>
+    </div>
   </div>
 
   <!-- Floating table of contents; populated per render. The chevron (or the
@@ -70,7 +80,7 @@
       <button id="toc-collapse" class="mdp-toc-collapse" type="button"
               title="Collapse" aria-expanded="true">▾</button>
       <span class="mdp-toc-title">Contents</span>
-      <button id="toc-hide" class="mdp-toc-hide" type="button" title="Hide (right-click the page to show again)">×</button>
+      <button id="toc-hide" class="mdp-toc-hide mdp-close-button" type="button" title="Hide (right-click the page to show again)">×</button>
     </div>
     <nav id="toc-list" class="mdp-toc-list"></nav>
   </aside>

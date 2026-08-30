@@ -359,8 +359,10 @@ listeners[0]({ data: { kind: 'find' } });
 findInput.value = 'mermaid';
 findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
 await new Promise(r => setTimeout(r, 200));
-ok('style/svg internals excluded from matches', findCount.textContent === '1/1',
-   `got ${findCount.textContent} — invisible <style>/<svg> text must not count`);
+ok('style internals still excluded, diagram label now counted',
+   findCount.textContent === '1/2',
+   `got ${findCount.textContent} — the <style> block holds two more "mermaid" ` +
+   `strings that must not count, while the visible <text> label must`);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
 // The host's context-menu entry opens (never toggles) the bar.
@@ -412,6 +414,99 @@ ok('position persisted for the next document',
 
 click('find-close');
 ok('a moved bar still closes', isHidden(findBar));
+
+console.log('\n== find options: case, whole word, regex ==');
+// All three are independent and combine; regex + whole word wraps the pattern
+// as \\b(?:...)\\b, which is why a pattern edged with non-word characters
+// legitimately finds nothing.
+const setOpt = (id, on) => {
+  const box = window.document.getElementById(id);
+  box.checked = on;
+  box.dispatchEvent(new window.Event('change', { bubbles: true }));
+};
+const search = async (text) => {
+  findInput.value = text;
+  findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 200));
+  return findCount.textContent;
+};
+
+c = render('# Widget\n\nwidget WIDGET widgets Widget-maker.\n');
+ctrlF();
+
+ok('case-insensitive by default', (await search('widget')) === '1/5',
+   `got ${findCount.textContent}`);
+
+setOpt('find-case', true);
+ok('match case narrows to exact casing', findCount.textContent === '1/2',
+   `got ${findCount.textContent}`);
+ok('match case persisted',
+   JSON.parse(window.localStorage.getItem('mdp.findOpts')).matchCase === true);
+
+setOpt('find-case', false);
+setOpt('find-word', true);
+ok('whole word drops the plural but keeps hyphenated',
+   findCount.textContent === '1/4', `got ${findCount.textContent}`);
+
+setOpt('find-word', false);
+setOpt('find-regex', true);
+ok('regex metacharacters are live', (await search('W.dget')) === '1/5',
+   `got ${findCount.textContent}`);
+setOpt('find-word', true);
+ok('regex + whole word combine', (await search('w.dgets')) === '1/1',
+   `got ${findCount.textContent}`);
+setOpt('find-word', false);
+
+// A half-typed pattern must not throw or silently read as no matches.
+await search('widget(');
+ok('invalid pattern reported, not thrown', findCount.textContent === 'bad pattern',
+   `got ${findCount.textContent}`);
+ok('invalid pattern flagged on the bar', findBar.classList.contains('mdp-find-invalid'));
+
+setOpt('find-regex', false);
+await search('widget(');
+ok('the same text is a literal search once regex is off',
+   findCount.textContent === '0/0', `got ${findCount.textContent}`);
+ok('invalid flag cleared', !findBar.classList.contains('mdp-find-invalid'));
+
+// The gear panel is a panel like any other: it must actually hide.
+const optsPanel = window.document.getElementById('find-opts');
+ok('options panel hidden until asked for', isHidden(optsPanel));
+click('find-options');
+ok('gear opens the options panel', !isHidden(optsPanel));
+click('find-options');
+ok('gear closes it again', isHidden(optsPanel));
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== find inside a rendered diagram ==');
+// The reported bug: text drawn inside a mermaid SVG was invisible to search.
+// It cannot be wrapped in <mark> (an HTML element inside <svg> does not
+// render), so it is boxed by an overlay instead.
+c = render('# Architecture\n\nThe Domain layer is inside.\n');
+c.insertAdjacentHTML('beforeend',
+  '<div class="mermaid-block"><svg data-processed="true">' +
+  '<style>#mermaid-2 .node{fill:#fff}</style>' +
+  '<g><text>Domain</text></g><g><text>Application</text></g></svg></div>');
+listeners[0]({ data: { kind: 'find' } });
+ok('diagram label is found', (await search('Domain')) === '1/2',
+   `got ${findCount.textContent} — the prose match plus the diagram label`);
+
+const overlays = window.document.querySelectorAll('.mdp-find-overlay');
+ok('the diagram match is boxed by an overlay', overlays.length === 1,
+   `got ${overlays.length}`);
+ok('the overlay counts as a match', overlays[0].classList.contains('mdp-find'));
+
+enter(false);
+ok('arrows cycle into the diagram match',
+   overlays[0].classList.contains('mdp-find-current'), `counter ${findCount.textContent}`);
+
+await search('Application');
+ok('a label with no prose twin is still found', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing removes the diagram overlays',
+   window.document.querySelectorAll('.mdp-find-overlay').length === 0);
 
 console.log('\n== render completion reporting ==');
 c = render('# done\n');

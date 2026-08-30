@@ -200,6 +200,67 @@ mjx-container[jax="SVG"][display="true"] {
   background: rgba(128, 128, 128, 0.2);
 }
 
+/* The close buttons on both panels are deliberately larger than their
+   neighbours: they are the controls people reach for in a hurry, and at the
+   size of the cycle arrows they were an easy thing to miss. */
+.mdp-close-button {
+  font-size: 17px;
+  padding: 2px 9px;
+  opacity: 0.8;
+}
+.mdp-close-button:hover { opacity: 1; }
+
+/* Gear: lit while its panel is open, so the bar shows the panel's state. */
+.mdp-find-button.mdp-active {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.28);
+}
+
+/* Search options. Anchored under the bar, which is `position: fixed` and so is
+   the containing block -- the panel travels with the bar when it is dragged. */
+.mdp-find-options {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  background: var(--mdp-canvas, Canvas);
+  color: var(--mdp-ink, CanvasText);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+}
+
+/* Below the rule above, for the reason given on .mdp-find-bar[hidden]. */
+.mdp-find-options[hidden] {
+  display: none;
+}
+
+.mdp-find-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.mdp-find-options input {
+  width: auto;
+  margin: 0;
+  accent-color: rgb(9, 105, 218);
+}
+
+/* An unfinished or invalid regular expression: say so on the input rather than
+   silently reporting no matches. */
+.mdp-find-bar.mdp-find-invalid input {
+  border-color: rgba(207, 34, 46, 0.8);
+}
+.mdp-find-bar.mdp-find-invalid .mdp-find-count {
+  color: rgba(207, 34, 46, 0.95);
+}
+
 /* The drag handle. Dragging is bound here rather than to the whole bar so that
    selecting text inside the input still works. */
 .mdp-find-grip {
@@ -221,6 +282,24 @@ mjx-container[jax="SVG"][display="true"] {
  */
 .mdp-find-reserved .markdown-body {
   padding-top: calc(var(--mdp-gutter) + 34px);
+}
+
+/*
+ * A match inside a diagram: text drawn in an <svg> cannot be wrapped in <mark>,
+ * so the match is boxed by an absolutely positioned overlay in document
+ * coordinates. Transparent to the pointer, and it scrolls with the diagram.
+ */
+.mdp-find-overlay {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: 2px;
+  background: rgba(255, 212, 0, 0.35);
+  outline: 1.5px solid rgba(255, 212, 0, 0.95);
+}
+.mdp-find-overlay.mdp-find-current {
+  background: rgba(255, 140, 0, 0.45);
+  outline: 2px solid rgba(255, 140, 0, 1);
 }
 
 mark.mdp-find {
