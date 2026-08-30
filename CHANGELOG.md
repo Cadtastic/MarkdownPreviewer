@@ -5,6 +5,44 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-08-30
+
+Fixes [#1](https://github.com/Cadtastic/MarkdownPreviewer/issues/1). The find
+bar shipped in 1.1.0 could not be hidden, which made it a permanent overlay on
+every document rather than something you opened when you needed it.
+
+### Fixed
+
+- **The find bar was visible on every document and could not be closed.** Both
+  overlays are shown and hidden by setting the `hidden` attribute, but each
+  panel's own `display: flex` outranked the user-agent rule that `hidden`
+  relies on, so the attribute had no effect on screen. The close button, the
+  `Esc` key and the "fewer than two headings" rule for the contents panel were
+  all working the whole time — nothing was listening.
+- **The find bar covered the start of the document.** While it sits in its
+  default position the document now reserves a strip for it, so it cannot
+  obscure the title.
+- **The contents panel's `×` did not hide it**, and the panel appeared on
+  documents with no headings. Same cause, same fix.
+- **`Send tab to your devices` appeared in the context menu.** It syncs a page
+  URL to another signed-in device, and ours is a process-local address that
+  means nothing elsewhere. Also removed, when the click lands on a link: open
+  in new window/tab and save-link-as. Copying a link address stays.
+- **The Find entry rendered as `Find…→Ctrl+F`.** WebView2 draws a tab in a menu
+  label literally instead of aligning an accelerator column.
+- Stripping browser entries left the separators that framed them, so the menu
+  opened with a stray rule and gaps. Leading, trailing and doubled separators
+  are now collapsed.
+
+### Added
+
+- **The find bar can be moved.** Drag it by the grip at its left edge; the
+  position is remembered for the next document and re-clamped if the pane is
+  resized smaller than where it was left.
+- With `LogLevel` at `0` the log now records the context menu both as the
+  browser offered it and as it was shown, which is what made the stray entry
+  identifiable rather than guesswork.
+
 ## [1.1.0] — 2026-08-29
 
 The first release after 1.0.0's field testing. Three of the fixes below are for
@@ -113,5 +151,6 @@ Initial release.
 - NSIS installer with .NET and WebView2 prerequisite detection, plus
   registration, diagnostic and Explorer-restart scripts.
 
+[1.1.1]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.0.0

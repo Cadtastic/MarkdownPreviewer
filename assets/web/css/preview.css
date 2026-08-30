@@ -144,6 +144,25 @@ mjx-container[jax="SVG"][display="true"] {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 
+/*
+ * `hidden` has to beat the panel's own `display`, and this rule must stay
+ * BELOW it.
+ *
+ * The HTML `hidden` attribute hides an element through the user-agent rule
+ * `[hidden] { display: none }`. Author declarations outrank user-agent ones
+ * however weak their specificity, so a bare `display: flex` here silently
+ * defeats `hidden`: the attribute stays set, the property reads true, and the
+ * element renders anyway. That shipped in 1.1.0 as issue #1 — the find bar was
+ * visible on every document and its close button appeared to do nothing.
+ *
+ * Ordering matters as much as specificity: a real browser would honour this
+ * rule anywhere in the file, but simplified cascades (jsdom, which the render
+ * tests run on) take the last match. Below the panel, it is correct in both.
+ */
+.mdp-find-bar[hidden] {
+  display: none;
+}
+
 .mdp-find-bar input {
   width: 180px;
   padding: 3px 6px;
@@ -181,6 +200,29 @@ mjx-container[jax="SVG"][display="true"] {
   background: rgba(128, 128, 128, 0.2);
 }
 
+/* The drag handle. Dragging is bound here rather than to the whole bar so that
+   selecting text inside the input still works. */
+.mdp-find-grip {
+  padding: 0 4px 0 2px;
+  cursor: grab;
+  opacity: 0.55;
+  user-select: none;
+  touch-action: none;          /* pointer events only; no scroll gesture */
+  line-height: 1;
+}
+.mdp-find-grip:hover { opacity: 0.9; }
+.mdp-find-bar.mdp-dragging .mdp-find-grip { cursor: grabbing; }
+.mdp-find-bar.mdp-dragging { user-select: none; }
+
+/*
+ * While the bar sits at its default position it gets a strip of its own, so it
+ * never covers the document's first line. Once the user drags it, the strip is
+ * released -- where it goes after that is their business.
+ */
+.mdp-find-reserved .markdown-body {
+  padding-top: calc(var(--mdp-gutter) + 34px);
+}
+
 mark.mdp-find {
   background: rgba(255, 212, 0, 0.45);
   color: inherit;
@@ -211,6 +253,11 @@ mark.mdp-find.mdp-find-current {
   font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   opacity: 0.96;
+}
+
+/* Must stay below the rule above; see the note on .mdp-find-bar[hidden]. */
+.mdp-toc[hidden] {
+  display: none;
 }
 
 .mdp-toc-header {

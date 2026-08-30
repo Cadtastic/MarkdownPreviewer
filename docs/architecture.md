@@ -212,6 +212,29 @@ similar machinery; without excluding `<style>`, `<script>`, `<svg>` and MathJax
 containers, searching for "mermaid" reported 146 matches on a document that
 visibly contains two.
 
+### The floating panels hide with `hidden`, and the CSS has to allow it
+
+Both overlays — the find bar and the table of contents — are shown and hidden by
+setting the `hidden` attribute. That works only because each panel is followed by
+a `[hidden] { display: none }` rule of its own.
+
+The HTML `hidden` attribute takes effect through the user-agent stylesheet rule
+`[hidden] { display: none }`, and **author declarations outrank user-agent ones
+however weak their specificity**. So `.mdp-find-bar { display: flex }` silently
+defeated `hidden`: the attribute was set, `element.hidden` read `true`, and the
+panel rendered anyway. That shipped as issue #1 — the find bar sat over every
+document and its close button appeared dead.
+
+Two rules follow from it:
+
+1. Never give either panel a `display` without a matching `[hidden]` override
+   directly below it. Below, not above: a real browser honours the override
+   anywhere thanks to specificity, but jsdom — which the render tests run on —
+   resolves ties by document order, so only the later rule works in both.
+2. Test **computed display**, never `element.hidden`. The property was correct
+   the entire time the bug was on screen, which is why 125 passing assertions
+   never noticed.
+
 ### Render ordering by host token
 
 Explorer changes selection faster than a document with a diagram can render. Every

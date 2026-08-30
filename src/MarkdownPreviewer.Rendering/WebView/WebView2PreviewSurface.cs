@@ -735,6 +735,18 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     {
         "back", "forward", "reload", "share", "webSelect", "saveAs", "saveImageAs",
         "print", "webCapture", "emoji", "inspectElement", "viewSource",
+
+        // "Send tab to your devices". Sits at the TOP level rather than under
+        // "More tools", which is how it survived the 1.1.0 cleanup: it syncs a
+        // page URL to another signed-in device, and our URL is a process-local
+        // virtual host that means nothing anywhere else.
+        "sendTabToSelf",
+
+        // Offered when the click lands on a link. A preview pane has no tabs or
+        // windows to open into, and "save link as" is a download. Copying the
+        // link address is fine and stays.
+        "openLinkInNewWindow", "openLinkInNewTab", "openLinkInSplitScreenView",
+        "saveLinkAs",
     };
 
     /// <summary>
@@ -743,7 +755,15 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     /// </summary>
     private void OnContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
     {
+        if (_log.IsEnabled(DiagnosticLevel.Debug))
+        {
+            // The browser's menu varies by runtime version, so what is worth
+            // stripping is a moving target. Log what actually arrived.
+            _log.Debug($"Context menu offered: {DescribeMenu(e.MenuItems)}");
+        }
+
         StripUnwantedItems(e.MenuItems);
+        TidySeparators(e.MenuItems);
 
         try
         {
@@ -776,8 +796,10 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                     string.Empty, null, CoreWebView2ContextMenuItemKind.Separator));
             }
 
+            // No tab in the label: WebView2 renders it literally instead of
+            // right-aligning an accelerator column, so it read as "Find...->Ctrl+F".
             CoreWebView2ContextMenuItem findItem = environment.CreateContextMenuItem(
-                "Find…\tCtrl+F", null, CoreWebView2ContextMenuItemKind.Command);
+                "Find… (Ctrl+F)", null, CoreWebView2ContextMenuItemKind.Command);
             findItem.CustomItemSelected += (_, _) => Post(new HostToPageMessage { Kind = "find" });
             e.MenuItems.Add(findItem);
 
@@ -785,6 +807,11 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 "Toggle table of contents", null, CoreWebView2ContextMenuItemKind.Command);
             toggle.CustomItemSelected += (_, _) => Post(new HostToPageMessage { Kind = "toc" });
             e.MenuItems.Add(toggle);
+
+            if (_log.IsEnabled(DiagnosticLevel.Debug))
+            {
+                _log.Debug($"Context menu shown: {DescribeMenu(e.MenuItems)}");
+            }
         }
         catch (Exception ex)
         {
@@ -792,6 +819,13 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             _log.Debug($"Adding custom menu items failed: {ex.Message}");
         }
     }
+
+    /// <summary>Flattens the menu to a readable list for the log.</summary>
+    private static string DescribeMenu(IList<CoreWebView2ContextMenuItem> items) =>
+        string.Join(", ", items.Select(item =>
+            item.Kind == CoreWebView2ContextMenuItemKind.Submenu
+                ? $"{item.Name}[{DescribeMenu(item.Children)}]"
+                : item.Name));
 
     private static void StripUnwantedItems(IList<CoreWebView2ContextMenuItem> items)
     {
@@ -815,6 +849,38 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             {
                 items.RemoveAt(i);
             }
+        }
+    }
+
+    /// <summary>
+    /// Removes leading, trailing and doubled separators.
+    /// </summary>
+    /// <remarks>
+    /// Stripping named items leaves the separators that framed them, so without
+    /// this the menu opens with a rule above the first entry and shows gaps
+    /// where the browser's own items used to be.
+    /// </remarks>
+    private static void TidySeparators(IList<CoreWebView2ContextMenuItem> items)
+    {
+        bool previousWasSeparator = true;   // leading separators are unwanted too
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            bool isSeparator = items[i].Kind == CoreWebView2ContextMenuItemKind.Separator;
+
+            if (isSeparator && previousWasSeparator)
+            {
+                items.RemoveAt(i--);
+                continue;
+            }
+
+            previousWasSeparator = isSeparator;
+        }
+
+        while (items.Count > 0 &&
+               items[^1].Kind == CoreWebView2ContextMenuItemKind.Separator)
+        {
+            items.RemoveAt(items.Count - 1);
         }
     }
 

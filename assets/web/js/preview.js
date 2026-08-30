@@ -32,7 +32,7 @@
 
   // Reported to the host in the "ready" handshake and logged, so a mismatch
   // between the installed binaries and the render assets is visible.
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
 
   /* Generous: mermaid is 3.5 MB and MathJax 2.1 MB, both parsed from disk. */
   var ASSET_LOAD_TIMEOUT_MS = 15000;
@@ -527,6 +527,7 @@
     bar: document.getElementById('find'),
     input: document.getElementById('find-input'),
     count: document.getElementById('find-count'),
+    position: null,          // null = default spot, and the document reserves a strip
     marks: [],
     index: -1,
     timer: 0
@@ -534,6 +535,7 @@
 
   function openFind() {
     find.bar.hidden = false;
+    applyFindPosition();
     find.input.focus();
     find.input.select();
     if (find.input.value) { runFind(find.input.value); }
@@ -541,8 +543,101 @@
 
   function closeFind() {
     find.bar.hidden = true;
+    document.body.classList.remove('mdp-find-reserved');
     clearFindMarks();
     find.count.textContent = '';
+  }
+
+  // ------------------------------------------------------- moving the bar ---
+
+  function readFindPosition() {
+    try {
+      var raw = window.localStorage.getItem('mdp.findPos');
+      if (!raw) { return null; }
+      var parsed = JSON.parse(raw);
+      return (typeof parsed.left === 'number' && typeof parsed.top === 'number')
+        ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function storeFindPosition(position) {
+    try {
+      if (position) {
+        window.localStorage.setItem('mdp.findPos', JSON.stringify(position));
+      } else {
+        window.localStorage.removeItem('mdp.findPos');
+      }
+    } catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  /*
+   * Places the bar, and decides whether the document owes it a strip.
+   *
+   * Undragged, the bar sits top-left and the document is padded down so the
+   * bar never covers the first line. Once moved, that padding is released:
+   * reserving space for a panel that is no longer there just leaves a gap.
+   */
+  function applyFindPosition() {
+    var position = find.position;
+
+    if (!position) {
+      find.bar.style.left = '';
+      find.bar.style.top = '';
+      document.body.classList.add('mdp-find-reserved');
+      return;
+    }
+
+    document.body.classList.remove('mdp-find-reserved');
+    var clamped = clampToViewport(position);
+    find.bar.style.left = clamped.left + 'px';
+    find.bar.style.top = clamped.top + 'px';
+  }
+
+  /* Keeps the bar reachable when the pane is resized smaller than the position
+     it was left at -- otherwise a stored position can strand it off-screen. */
+  function clampToViewport(position) {
+    var width = find.bar.offsetWidth || 260;
+    var height = find.bar.offsetHeight || 34;
+    var maxLeft = Math.max(0, window.innerWidth - width - 4);
+    var maxTop = Math.max(0, window.innerHeight - height - 4);
+    return {
+      left: Math.min(Math.max(position.left, 4), maxLeft),
+      top: Math.min(Math.max(position.top, 4), maxTop)
+    };
+  }
+
+  function beginFindDrag(event) {
+    // Left button only; anything else is a context menu or a stray touch.
+    if (event.button !== undefined && event.button !== 0) { return; }
+    event.preventDefault();
+
+    var rect = find.bar.getBoundingClientRect();
+    var offsetX = event.clientX - rect.left;
+    var offsetY = event.clientY - rect.top;
+
+    find.bar.classList.add('mdp-dragging');
+
+    function onMove(moveEvent) {
+      find.position = clampToViewport({
+        left: moveEvent.clientX - offsetX,
+        top: moveEvent.clientY - offsetY
+      });
+      applyFindPosition();
+    }
+
+    function onUp() {
+      find.bar.classList.remove('mdp-dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      storeFindPosition(find.position);
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   }
 
   function clearFindMarks() {
@@ -1001,6 +1096,15 @@
     setCurrentMatch(find.index - 1);
   });
   document.getElementById('find-close').addEventListener('click', closeFind);
+
+  find.position = readFindPosition();
+  document.getElementById('find-grip').addEventListener('pointerdown', beginFindDrag);
+
+  // A stored position can end up off-screen when the pane is narrowed; re-clamp
+  // so the bar is always reachable.
+  window.addEventListener('resize', function () {
+    if (!find.bar.hidden) { applyFindPosition(); }
+  });
 
   // --- table of contents ----------------------------------------------------
 

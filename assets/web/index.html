@@ -48,9 +48,11 @@
   <div id="notice" class="notice" role="status" hidden></div>
 
   <!-- Find-in-page bar: Ctrl+F (or the context menu) opens it, Enter/Shift+Enter
-       cycle matches, Esc closes. Implemented in-page because the browser's own
-       find UI is disabled along with the rest of its accelerators. -->
+       cycle matches, Esc or the close button hides it. Draggable by its grip.
+       Implemented in-page because the browser's own find UI is disabled along
+       with the rest of its accelerators. -->
   <div id="find" class="mdp-find-bar" hidden>
+    <span id="find-grip" class="mdp-find-grip" title="Drag to move">⠿</span>
     <input id="find-input" type="text" placeholder="Find" spellcheck="false"
            autocomplete="off" aria-label="Find in preview" />
     <span id="find-count" class="mdp-find-count"></span>

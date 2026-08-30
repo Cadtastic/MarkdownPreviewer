@@ -21,9 +21,9 @@
     <Company>Addam Boord</Company>
     <!-- Keep in step with installer/MarkdownPreviewer.nsi (PRODUCT_VERSION),
          assets/web/js/preview.js (VERSION) and CHANGELOG.md. -->
-    <Version>1.1.0</Version>
-    <FileVersion>1.1.0.0</FileVersion>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Version>1.1.1</Version>
+    <FileVersion>1.1.1.0</FileVersion>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
     <Copyright>Copyright (c) 2026</Copyright>
   </PropertyGroup>
 

@@ -21,6 +21,16 @@ const dom = new JSDOM(html, {
 const { window } = dom;
 window.scrollTo = () => {};   // jsdom has no layout
 
+// preview.css is a <link>, which jsdom does not fetch. Inline it so the cascade
+// is real: the panels' visibility depends on `hidden` beating their own
+// `display`, and asserting the .hidden property alone cannot see that.
+const styleEl = window.document.createElement('style');
+styleEl.textContent = readFileSync(path.join(WEB, 'css', 'preview.css'), 'utf8');
+window.document.head.appendChild(styleEl);
+
+/* Is the element actually hidden, as opposed to merely carrying the attribute? */
+const isHidden = (el) => window.getComputedStyle(el).display === 'none';
+
 // Intercept lazily injected <script> tags: jsdom will not fetch them, so without
 // this the render promise never settles and we cannot observe the lazy-load path
 // at all. Recording the src also lets us assert *whether* a bundle was requested,
@@ -250,17 +260,18 @@ ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExtern
 console.log('\n== floating table of contents ==');
 const tocEl = window.document.getElementById('toc');
 c = render('# One\n\n## Two\n\n## Three\n');
-ok('TOC visible for a document with headings', tocEl.hidden === false);
+ok('TOC visible for a document with headings', !isHidden(tocEl));
 ok('TOC lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
    `got ${window.document.querySelectorAll('#toc-list a').length}`);
 ok('TOC entries link to the heading anchors',
    window.document.querySelector('#toc-list a')?.getAttribute('href') === '#one');
 
 c = render('plain text, no headings\n');
-ok('TOC hidden for a document without headings', tocEl.hidden === true);
+ok('TOC hidden for a document without headings', isHidden(tocEl),
+   'the panel is still rendered -- see issue #1');
 
 c = render('# One\n\n## Two\n');
-ok('TOC returns for the next heading-ful document', tocEl.hidden === false);
+ok('TOC returns for the next heading-ful document', !isHidden(tocEl));
 
 // Collapse: shrinks to the "Contents" pill; independent of visibility; persists.
 window.document.getElementById('toc-header').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -271,10 +282,10 @@ ok('chevron click expands again', !tocEl.classList.contains('mdp-collapsed'));
 
 // Hide via the x button; reshow via the host's context-menu message.
 window.document.getElementById('toc-hide').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('x button hides the panel', tocEl.hidden === true);
+ok('x button hides the panel', isHidden(tocEl), 'the x button did not hide it -- see issue #1');
 ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
 listeners[0]({ data: { kind: 'toc' } });
-ok('host toc message shows it again', tocEl.hidden === false);
+ok('host toc message shows it again', !isHidden(tocEl));
 
 console.log('\n== find in page ==');
 const findBar = window.document.getElementById('find');
@@ -284,10 +295,11 @@ const ctrlF = () => window.document.dispatchEvent(
   new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
 
 c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
-ok('find bar hidden until asked for', findBar.hidden === true);
+ok('find bar hidden until asked for', isHidden(findBar),
+   'the bar renders on every document -- see issue #1');
 
 ctrlF();
-ok('Ctrl+F opens the find bar', findBar.hidden === false);
+ok('Ctrl+F opens the find bar', !isHidden(findBar));
 
 // runFind is debounced behind the input event; call the same path directly by
 // typing and firing input, then waiting past the debounce.
@@ -358,6 +370,48 @@ ok('host find message opens the bar', findBar.hidden === false);
 listeners[0]({ data: { kind: 'find' } });
 ok('a second host find message leaves it open', findBar.hidden === false);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== find bar: closing, reopening, moving ==');
+// Regression cover for issue #1: every one of these passed against the .hidden
+// property while the bar stayed on screen. They assert computed display.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+const click = (id) => window.document.getElementById(id)
+  .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+ctrlF();
+ok('bar open before closing', !isHidden(findBar));
+click('find-close');
+ok('close button hides the bar', isHidden(findBar), 'the x did nothing -- see issue #1');
+ok('closing clears the highlights', c.querySelectorAll('mark.mdp-find').length === 0);
+
+ctrlF();
+ok('Ctrl+F reopens a hidden bar', !isHidden(findBar));
+click('find-close');
+listeners[0]({ data: { kind: 'find' } });
+ok('the context menu reopens a hidden bar', !isHidden(findBar));
+
+// Undragged, the document reserves a strip so the bar cannot cover the title.
+ok('document reserves space for the bar',
+   window.document.body.classList.contains('mdp-find-reserved'));
+
+// Dragging by the grip moves the bar and releases that strip.
+const grip = window.document.getElementById('find-grip');
+const pointer = (type, x, y) => window.dispatchEvent(
+  new window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
+grip.dispatchEvent(new window.MouseEvent('pointerdown',
+  { clientX: 20, clientY: 20, button: 0, bubbles: true, cancelable: true }));
+pointer('pointermove', 320, 260);
+pointer('pointerup', 320, 260);
+
+ok('drag moved the bar', findBar.style.left !== '' && findBar.style.top !== '',
+   `left=${findBar.style.left} top=${findBar.style.top}`);
+ok('a moved bar releases the reserved strip',
+   !window.document.body.classList.contains('mdp-find-reserved'));
+ok('position persisted for the next document',
+   JSON.parse(window.localStorage.getItem('mdp.findPos') || 'null')?.left > 0);
+
+click('find-close');
+ok('a moved bar still closes', isHidden(findBar));
 
 console.log('\n== render completion reporting ==');
 c = render('# done\n');
