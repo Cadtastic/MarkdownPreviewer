@@ -100,7 +100,7 @@ internal sealed class HarnessWindow : Form
         _surface = new WebView2PreviewSurface(
             _surfaceHost, assets, new ShellExecuteLinkLauncher(_log),
             new ShellWindowsDocumentRevealer(_log), new MarkdownTaskListEditor(_log),
-            new RegistryTrustedDocumentStore(_log), _log);
+            new RegistryTaskEditModeStore(_log), new RegistryTrustedDocumentStore(_log), _log);
         _session = new PreviewSession(_surface, new HarnessSettingsProvider(_themeSelector), new SystemThemeProvider(_log), _log);
 
         await _session.PreviewAsync(new EmptyReader(), CancellationToken.None).ConfigureAwait(true);

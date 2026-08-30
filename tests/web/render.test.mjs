@@ -322,7 +322,8 @@ linkModeToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 ok('toggling flips to app mode', linkModeToggle.getAttribute('aria-pressed') === 'true');
 ok('the choice is persisted', window.localStorage.getItem('mdp.linkMode') === 'app');
 ok('the tooltip states the current behaviour',
-   linkModeToggle.title.startsWith('Local links open in their default app'), linkModeToggle.title);
+   (linkModeToggle.getAttribute('data-mdp-tip') || '').startsWith('Links open in the default app'),
+   linkModeToggle.getAttribute('data-mdp-tip'));
 
 posted.length = 0;
 docAnchor.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -342,9 +343,10 @@ ok('click routed to the host as openDocument',
 ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExternal'));
 
 console.log('\n== editable task checkboxes ==');
-// Off by default, and a checkbox click is a write, so the page must be exact
-// about which source line it names.
+// Off by default, per document rather than per user, and a checkbox click is a
+// write — so the page has to be exact about which source line it names.
 const taskEditToggle = window.document.getElementById('task-edit');
+const tipOf = (el) => el.getAttribute('data-mdp-tip') || '';
 const taskDoc = '# Todo\n\n- [ ] first\n- [x] second\n';
 
 c = render(taskDoc);
@@ -352,22 +354,34 @@ ok('checkboxes are read-only by default',
    [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled));
 ok('the toggle starts unpressed', taskEditToggle.getAttribute('aria-pressed') === 'false');
 ok('the tooltip discloses the save behaviour',
-   taskEditToggle.title.includes('saves the file immediately'), taskEditToggle.title);
+   tipOf(taskEditToggle).includes('save to the file'), tipOf(taskEditToggle));
+ok('the tooltip is themed, not a native title',
+   !taskEditToggle.hasAttribute('title'));
+ok('the tooltip breaks its detail onto another line',
+   tipOf(taskEditToggle).includes('\n'), JSON.stringify(tipOf(taskEditToggle)));
 
 posted.length = 0;
 c.querySelector('li.mdp-task input').click();
 ok('a click while read-only writes nothing',
    !posted.some(m => m.kind === 'toggleTask'), JSON.stringify(posted));
 
+posted.length = 0;
 taskEditToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 ok('toggling makes the boxes editable',
    [...c.querySelectorAll('li.mdp-task input')].every(b => !b.disabled));
-ok('the choice is persisted', window.localStorage.getItem('mdp.editTasks') === '1');
-ok('the tooltip now offers the way back',
-   taskEditToggle.title.includes('read-only'), taskEditToggle.title);
+ok('the choice goes to the host, which owns it per document',
+   posted.some(m => m.kind === 'setTaskEdit' && m.enabled === true), JSON.stringify(posted));
+ok('nothing is written to shared browser storage',
+   window.localStorage.getItem('mdp.editTasks') === null);
+ok('the tooltip now reads as already-on',
+   tipOf(taskEditToggle).startsWith('Checkboxes are editable'), tipOf(taskEditToggle));
 
 // Line numbers are what the host writes against, so they are the thing to pin.
+// Each render carries taskEditOn, because the host is the authority on it.
+const editable = { taskEditOn: true };
+
 posted.length = 0;
+c = render(taskDoc, {}, 'light', editable);
 const taskBoxes = c.querySelectorAll('li.mdp-task input');
 taskBoxes[0].click();
 ok('checking names its own source line and state',
@@ -383,7 +397,7 @@ ok('unchecking names the second line',
 // Front matter is stripped before parsing, so its lines have to be added back
 // or every edit would land that many lines too early in the file.
 posted.length = 0;
-c = render('---\ntitle: T\ntags: [a]\n---\n\n- [ ] after front matter\n');
+c = render('---\ntitle: T\ntags: [a]\n---\n\n- [ ] after front matter\n', {}, 'light', editable);
 c.querySelector('li.mdp-task input').click();
 ok('front-matter lines are counted back in',
    posted.some(m => m.kind === 'toggleTask' && m.line === 5),
@@ -392,7 +406,7 @@ ok('front-matter lines are counted back in',
 // A task inside a fenced block is not a checkbox, so it must not shift the
 // line of the real one below it.
 posted.length = 0;
-c = render('```md\n- [ ] decoy\n```\n\n- [ ] real\n');
+c = render('```md\n- [ ] decoy\n```\n\n- [ ] real\n', {}, 'light', editable);
 ok('the decoy in the fence is not a checkbox', c.querySelectorAll('li.mdp-task').length === 1);
 c.querySelector('li.mdp-task input').click();
 ok('the real task still names its own line',
@@ -403,7 +417,8 @@ ok('the real task still names its own line',
 // fixture on purpose: if either side's line arithmetic drifts, one of them
 // fails rather than the pair silently disagreeing in production.
 posted.length = 0;
-c = render('---\ntitle: Demo\n---\n\n# Tasks\n\n```md\n- [ ] decoy in a fence\n```\n\n- [ ] alpha\n- [x] beta\n');
+c = render('---\ntitle: Demo\n---\n\n# Tasks\n\n```md\n- [ ] decoy in a fence\n```\n\n- [ ] alpha\n- [x] beta\n',
+           {}, 'light', editable);
 ok('front matter and a fence together still land on the right line',
    posted.length === 0 && c.querySelectorAll('li.mdp-task').length === 2);
 c.querySelectorAll('li.mdp-task input')[0].click();
@@ -411,10 +426,21 @@ ok('the shared fixture names line 10',
    posted.some(m => m.kind === 'toggleTask' && m.line === 10 && m.checked === true),
    JSON.stringify(posted));
 
+// Editing belongs to the document, not the reader: a file the host says is not
+// enabled comes back read-only however the last one was left.
+c = render(taskDoc);
+ok('the next document does not inherit the choice',
+   taskEditToggle.getAttribute('aria-pressed') === 'false' &&
+   [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled));
+c = render(taskDoc, {}, 'light', editable);
+ok('and a document the host says is enabled comes back editable',
+   taskEditToggle.getAttribute('aria-pressed') === 'true' &&
+   [...c.querySelectorAll('li.mdp-task input')].every(b => !b.disabled));
+
 // A document with no file behind it cannot be written to.
 c = render(taskDoc, {}, 'light', { taskEditable: false });
 ok('an unwritable document disables the toggle', taskEditToggle.disabled === true);
-ok('and says why', taskEditToggle.title.includes('cannot be edited'), taskEditToggle.title);
+ok('and says why', tipOf(taskEditToggle).includes('no file to save to'), tipOf(taskEditToggle));
 ok('its checkboxes stay read-only',
    [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled));
 
@@ -422,17 +448,10 @@ posted.length = 0;
 c.querySelector('li.mdp-task input').click();
 ok('and a click on one writes nothing', !posted.some(m => m.kind === 'toggleTask'));
 
-// Back to an editable document: the preference survived, so the boxes come
-// back editable without touching the toggle again.
-c = render(taskDoc);
-ok('the preference still holds on the next editable document',
-   taskEditToggle.disabled === false &&
-   [...c.querySelectorAll('li.mdp-task input')].every(b => !b.disabled));
-
-taskEditToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('toggling off makes them read-only again',
-   [...c.querySelectorAll('li.mdp-task input')].every(b => b.disabled) &&
-   window.localStorage.getItem('mdp.editTasks') === '0');
+// Nothing to edit is its own reason, and a different one to say.
+c = render('# Just prose\n\nNo task list here.\n', {}, 'light', editable);
+ok('a document with no task list disables the toggle', taskEditToggle.disabled === true);
+ok('and says that is why', tipOf(taskEditToggle).includes('no task list'), tipOf(taskEditToggle));
 
 console.log('\n== contents rail ==');
 const tocEl = window.document.getElementById('toc');
@@ -655,6 +674,97 @@ ok('gear closes the row again', isHidden(optsPanel));
 ok('row closed state persisted', window.localStorage.getItem('mdp.optsRow') === '0');
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 void offsetWithRow;
+
+console.log('\n== the cycle buttons only exist when there is somewhere to go ==');
+// Two dead arrows in an empty search field are clutter; with one match there is
+// no "next" to reach either.
+const findCycle = window.document.getElementById('find-cycle');
+c = render('# Notes\n\nExactly one widget lives here.\n');
+ctrlF();
+ok('hidden before anything is typed', isHidden(findCycle));
+
+await search('nothing-matches-this');
+ok('hidden when the search finds nothing', isHidden(findCycle));
+
+await search('widget');
+ok('hidden on a single match', isHidden(findCycle), findCount.textContent);
+
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+await search('widget');
+ok('shown once there are two or more', !isHidden(findCycle), findCount.textContent);
+
+await search('');
+ok('hidden again when the query is cleared', isHidden(findCycle));
+
+// They live inside the field now, not out in the toolbar row.
+ok('the cycle pair sits inside the search field',
+   window.document.querySelector('.mdp-find-field .mdp-find-cycle') !== null);
+ok('the match count sits inside it too',
+   window.document.querySelector('.mdp-find-field .mdp-find-count') !== null);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== expand preview width ==');
+const expandToggle = window.document.getElementById('expand-view');
+c = render('# Wide\n\nBody text.\n');
+ok('starts at the centred reading width', !c.classList.contains('mdp-expanded'));
+ok('and reads as unpressed', expandToggle.getAttribute('aria-pressed') === 'false');
+ok('the tooltip offers to expand',
+   (expandToggle.getAttribute('data-mdp-tip') || '').startsWith('Expand preview width'),
+   expandToggle.getAttribute('data-mdp-tip'));
+
+expandToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('expanding drops the width cap', c.classList.contains('mdp-expanded'));
+ok('and reads as pressed', expandToggle.getAttribute('aria-pressed') === 'true');
+ok('the tooltip now offers the way back',
+   (expandToggle.getAttribute('data-mdp-tip') || '').startsWith('Restore preview width'),
+   expandToggle.getAttribute('data-mdp-tip'));
+ok('the choice is persisted', window.localStorage.getItem('mdp.expanded') === '1');
+
+// The cap has one definition, in the stylesheet; collapsing restores it by
+// dropping the class rather than by writing a width back.
+expandToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('collapsing restores the previous width', !c.classList.contains('mdp-expanded'));
+ok('with the stylesheet cap intact',
+   window.getComputedStyle(c).maxWidth === '980px', window.getComputedStyle(c).maxWidth);
+ok('and the choice persisted', window.localStorage.getItem('mdp.expanded') === '0');
+
+// It survives a render, because it belongs to the reader rather than the file.
+expandToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+c = render('# Another\n\nBody.\n', {}, 'light', { documentGeneration: 99 });
+ok('expansion holds across documents', c.classList.contains('mdp-expanded'));
+expandToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+console.log('\n== themed tooltips ==');
+// Native titles cannot take the theme, cannot break where we want them to, and
+// appear on the OS's own delay. Every toolbar control uses the themed one.
+const tipEl = window.document.getElementById('mdp-tip');
+ok('the tooltip element exists and starts hidden', !!tipEl && isHidden(tipEl));
+ok('no toolbar control still carries a native title',
+   window.document.querySelectorAll('#toolbar [title]').length === 0,
+   [...window.document.querySelectorAll('#toolbar [title]')].map(e => e.id || e.tagName).join(','));
+ok('every tipped control has text to show',
+   [...window.document.querySelectorAll('#toolbar [data-mdp-tip]')]
+     .every(e => (e.getAttribute('data-mdp-tip') || '').length > 0));
+
+// Focus is a first-class trigger, not just hover.
+window.document.getElementById('find-options').dispatchEvent(
+  new window.FocusEvent('focusin', { bubbles: true }));
+ok('focus shows the tooltip', !isHidden(tipEl));
+ok('the label is its own line',
+   tipEl.querySelector('b')?.textContent === 'Options',
+   tipEl.textContent);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('Esc dismisses it', isHidden(tipEl));
+
+// A two-line tip splits into label and detail.
+window.document.getElementById('toolbar-close').dispatchEvent(
+  new window.FocusEvent('focusin', { bubbles: true }));
+ok('the detail goes in its own element',
+   tipEl.querySelector('b')?.textContent === 'Close the toolbar' &&
+   tipEl.querySelector('span')?.textContent === 'Esc',
+   tipEl.textContent);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
 console.log('\n== find inside a rendered diagram ==');
 // The reported bug: text drawn inside a mermaid SVG was invisible to search.
@@ -926,9 +1036,17 @@ console.log('\n== toolbar geometry ==');
 // button's left edge on the rail's left edge.
 const toolbarRow = window.document.querySelector('.mdp-toolbar-row');
 ok('close button is the last control in the row',
-   toolbarRow.querySelector('.mdp-toolbar-right').lastElementChild.id === 'toolbar-close');
+   [...toolbarRow.querySelectorAll('button')].pop().id === 'toolbar-close');
 ok('Contents button leads the right-hand group',
    toolbarRow.querySelector('.mdp-toolbar-right').firstElementChild.id === 'toc-toggle');
+// The view controls sit between Contents and the close button, right-aligned,
+// rather than trailing the search field.
+ok('options and expand sit between Contents and close',
+   [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(',')
+     === 'find-options,expand-view,toolbar-close',
+   [...toolbarRow.querySelectorAll('.mdp-toolbar-view button')].map(b => b.id).join(','));
+ok('neither of them trails the search field',
+   toolbarRow.querySelector('.mdp-find-field ~ button') === null);
 // The alignment is only durable if both widths come off the same token, so
 // that is what is asserted -- jsdom does not resolve custom properties, and a
 // resolved pixel figure would not prove they are tied together anyway.
@@ -946,8 +1064,8 @@ ok('every toolbar icon is 24px square',
    icons.every(i => window.getComputedStyle(i).width === '24px' &&
                     window.getComputedStyle(i).height === '24px'));
 ok('icon buttons pad by 2px',
-   window.getComputedStyle(window.document.getElementById('find-next')).padding === '2px',
-   window.getComputedStyle(window.document.getElementById('find-next')).padding);
+   window.getComputedStyle(window.document.getElementById('find-options')).padding === '2px',
+   window.getComputedStyle(window.document.getElementById('find-options')).padding);
 
 console.log('\n== search field state colours ==');
 // Green with matches, red without, red for a pattern that will not compile,
@@ -1035,9 +1153,32 @@ ok('the next document does not inherit the grant',
 // An item with no file behind it has nothing to record a grant against.
 c = render('# Streamed\n', {}, 'light', { trustable: false, documentName: '' });
 ok('an unlocatable item cannot be trusted', trustToggle.disabled === true);
-ok('and it says why', trustToggle.title.includes('no file on disk'), trustToggle.title);
-c = render('# Located\n', {}, 'light', { trustable: true });
-ok('a real file can be trusted again', trustToggle.disabled === false);
+ok('and it says why',
+   (trustToggle.getAttribute('data-mdp-tip') || '').includes('no file on disk'),
+   trustToggle.getAttribute('data-mdp-tip'));
+c = render('# Located\n\n![badge](https://cdn.example.com/b.png)\n', {}, 'light', { trustable: true });
+ok('a real file with a remote image can be trusted again', trustToggle.disabled === false);
+
+// Trust is about remote images, so a document without any has nothing to
+// grant: the toggle disables itself and says that, not "cannot be trusted".
+c = render('# Local only\n\n![local](images/pic.png)\n');
+ok('a document with no external image links disables the toggle',
+   trustToggle.disabled === true);
+ok('and the tooltip says there is nothing to trust',
+   (trustToggle.getAttribute('data-mdp-tip') || '').includes('no external image links'),
+   trustToggle.getAttribute('data-mdp-tip'));
+ok('the tooltip names images, not links in general',
+   (trustToggle.getAttribute('data-mdp-tip') || '').startsWith('Trust external image links'));
+
+// A raw-HTML image is a remote image too; the sanitiser path must count it.
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n', { allowRawHtml: true });
+ok('a raw-HTML remote image is enough to enable the toggle', trustToggle.disabled === false);
+
+// And the trusted state names images as well.
+c = render('![b](https://cdn.example.com/b.png)\n', {}, 'light', { trusted: true });
+ok('the trusted tooltip says external image links are trusted',
+   (trustToggle.getAttribute('data-mdp-tip') || '').startsWith('External image links are trusted'),
+   trustToggle.getAttribute('data-mdp-tip'));
 
 console.log(`\n${'='.repeat(46)}\n  ${pass} passed, ${fail} failed\n${'='.repeat(46)}`);
 process.exit(fail === 0 ? 0 : 1);

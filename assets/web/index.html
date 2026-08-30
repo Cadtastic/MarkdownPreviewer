@@ -59,22 +59,29 @@
        button sits at the far right of the bar. -->
   <div id="toolbar" class="mdp-toolbar">
     <div class="mdp-toolbar-row">
-      <input id="find-input" type="text" placeholder="Find" spellcheck="false"
-             autocomplete="off" aria-label="Find in preview" />
-      <span id="find-count" class="mdp-find-count"></span>
-      <button id="find-prev" class="mdp-toolbar-button" type="button" title="Previous match (Shift+Enter)">
-        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
-      </button>
-      <button id="find-next" class="mdp-toolbar-button" type="button" title="Next match (Enter)">
-        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
-      </button>
-      <button id="find-options" class="mdp-toolbar-button" type="button"
-              title="Search options" aria-expanded="false" aria-controls="find-opts">
-        <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
-          <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
-        </svg>
-      </button>
+      <!-- The field owns its own controls: the match count, then a split pair
+           of cycle buttons tucked inside its right edge. Both only appear once
+           there is something to cycle through — with a single match there is
+           no "next", and with none the buttons would be dead controls. -->
+      <div class="mdp-find-field">
+        <input id="find-input" type="text" placeholder="Find" spellcheck="false"
+               autocomplete="off" aria-label="Find in preview" />
+        <div class="mdp-find-actions">
+          <span id="find-count" class="mdp-find-count"></span>
+          <div id="find-cycle" class="mdp-find-cycle" hidden>
+            <button id="find-prev" class="mdp-find-step" type="button"
+                    data-mdp-tip="Previous match&#10;Shift+Enter">
+              <svg class="mdp-icon mdp-icon-sm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
+              <span class="mdp-sr-only">Previous match</span>
+            </button>
+            <button id="find-next" class="mdp-find-step" type="button"
+                    data-mdp-tip="Next match&#10;Enter">
+              <svg class="mdp-icon mdp-icon-sm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
+              <span class="mdp-sr-only">Next match</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <span class="mdp-toolbar-spacer"></span>
 
@@ -83,10 +90,39 @@
                 aria-expanded="false">Contents
           <svg id="toc-chevron" class="mdp-icon mdp-toc-chevron" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
         </button>
-        <button id="toolbar-close" class="mdp-toolbar-button mdp-close-button" type="button"
-                title="Close (Esc)">
-          <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6l-12 12M6 6l12 12" /></svg>
-        </button>
+        <div class="mdp-toolbar-view">
+          <button id="find-options" class="mdp-toolbar-button" type="button"
+                  data-mdp-tip="Options" aria-expanded="false" aria-controls="find-opts">
+            <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+              <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+            </svg>
+          </button>
+
+          <!-- Widens the document to fill the pane. The glyph shows the direction
+               the next click takes it: arrows out to expand, arrows in to restore. -->
+          <button id="expand-view" class="mdp-toolbar-button mdp-expand-toggle" type="button"
+                  aria-pressed="false" data-mdp-tip="">
+            <svg class="mdp-icon mdp-ex-out" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16 4h4v4" />
+              <path d="M14 10l6 -6" />
+              <path d="M8 20h-4v-4" />
+              <path d="M4 20l6 -6" />
+            </svg>
+            <svg class="mdp-icon mdp-ex-in" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 10h-4v-4" />
+              <path d="M14 10l6 -6" />
+              <path d="M6 14h4v4" />
+              <path d="M10 14l-6 6" />
+            </svg>
+            <span class="mdp-sr-only">Expand preview width</span>
+          </button>
+
+          <button id="toolbar-close" class="mdp-toolbar-button mdp-close-button" type="button"
+                  data-mdp-tip="Close the toolbar&#10;Esc">
+            <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6l-12 12M6 6l12 12" /></svg>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -97,7 +133,7 @@
     <div id="find-opts" class="mdp-toolbar-options" hidden>
       <label><input type="checkbox" id="find-case" /> Match case</label>
       <label><input type="checkbox" id="find-word" /> Match whole word</label>
-      <label title="Combines with the others. With whole word the pattern is wrapped as \b(?:pattern)\b, so one starting or ending with a non-word character will not match."><input type="checkbox" id="find-regex" /> Regular expression</label>
+      <label data-mdp-tip="Combines with the other options.&#10;With whole word the pattern is wrapped as \b(?:pattern)\b, so one&#10;starting or ending with a non-word character cannot match."><input type="checkbox" id="find-regex" /> Regular expression</label>
       <span class="mdp-toolbar-spacer"></span>
 
       <!-- Where a click on a local link goes. Two modes, so the glyph states
@@ -106,7 +142,7 @@
            box while they open in the default app. preview.js swaps the glyph
            and the tooltip off aria-pressed. -->
       <button id="link-mode" class="mdp-toolbar-button mdp-linkmode-toggle" type="button"
-              aria-pressed="false" title="Local links reveal the file in File Explorer">
+              aria-pressed="false" data-mdp-tip="">
         <svg class="mdp-icon mdp-lm-app" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6" />
           <path d="M11 13l9 -9" />
@@ -124,7 +160,7 @@
            read-only as ever; on, checking a box saves the file immediately and
            silently — the tooltip is where that is said, per design. -->
       <button id="task-edit" class="mdp-toolbar-button mdp-taskedit-toggle" type="button"
-              aria-pressed="false" title="">
+              aria-pressed="false" data-mdp-tip="">
         <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" />
           <path d="M9 11l3 3l8 -8" />
@@ -136,7 +172,7 @@
            The slash is part of the glyph rather than a separate "off" icon, so
            the two states are the same shape and read as one switch. -->
       <button id="trust-toggle" class="mdp-toolbar-button mdp-trust-toggle" type="button"
-              aria-pressed="false" title="Trust external links">
+              aria-pressed="false" data-mdp-tip="">
         <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
           <path d="M3.6 9h16.8M3.6 15h16.8" />
@@ -166,6 +202,11 @@
       </label>
     </div>
   </div>
+
+  <!-- One tooltip element, moved and filled from whichever control the pointer
+       or keyboard is on. A native `title` cannot be themed, cannot wrap where we
+       want it to, and waits on the OS's own delay. -->
+  <div id="mdp-tip" class="mdp-tip" role="tooltip" aria-hidden="true" hidden></div>
 
   <!-- Trusting a document is a security decision, so it is made in a dialog
        rather than by a switch that flips under the pointer. Cancel is the

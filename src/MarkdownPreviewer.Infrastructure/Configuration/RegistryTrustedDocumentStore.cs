@@ -24,7 +24,7 @@ public sealed class RegistryTrustedDocumentStore(IDiagnosticLog log) : ITrustedD
 {
     public bool IsTrusted(string? fullPath)
     {
-        if (!TryNormalise(fullPath, out string key))
+        if (!DocumentPathKey.TryNormalise(fullPath, out string key))
         {
             return false;
         }
@@ -52,7 +52,7 @@ public sealed class RegistryTrustedDocumentStore(IDiagnosticLog log) : ITrustedD
 
     public void SetTrusted(string? fullPath, bool trusted)
     {
-        if (!TryNormalise(fullPath, out string key))
+        if (!DocumentPathKey.TryNormalise(fullPath, out string key))
         {
             log.Debug("Ignoring a trust change for an item with no file behind it.");
             return;
@@ -83,34 +83,6 @@ public sealed class RegistryTrustedDocumentStore(IDiagnosticLog log) : ITrustedD
             // The preference did not stick. That is worth a log line and
             // nothing more — the preview itself is unaffected.
             log.Warn($"Could not record trust for '{key}'.", ex);
-        }
-    }
-
-    /// <summary>
-    /// Canonicalises a path so the same file cannot be trusted twice under two
-    /// spellings, and rejects the stream-fed items that have no file at all.
-    /// </summary>
-    private static bool TryNormalise(string? fullPath, out string normalised)
-    {
-        normalised = string.Empty;
-
-        // A display name from IStream.Stat is a bare file name, not a location.
-        // Tested before GetFullPath, which would happily root it against the
-        // current directory and let one name stand for every file that shares
-        // it.
-        if (string.IsNullOrWhiteSpace(fullPath) || !Path.IsPathRooted(fullPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            normalised = Path.GetFullPath(fullPath);
-            return true;
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return false;
         }
     }
 }

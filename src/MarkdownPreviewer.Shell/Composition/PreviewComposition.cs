@@ -56,7 +56,9 @@ internal static class PreviewComposition
         var trust = new RegistryTrustedDocumentStore(log);
         var revealer = new ShellWindowsDocumentRevealer(log);
         var taskEditor = new MarkdownTaskListEditor(log);
-        var surface = new WebView2PreviewSurface(host, AssetCatalog, launcher, revealer, taskEditor, trust, log);
+        var taskEditMode = new RegistryTaskEditModeStore(log);
+        var surface = new WebView2PreviewSurface(
+            host, AssetCatalog, launcher, revealer, taskEditor, taskEditMode, trust, log);
 
         return new PreviewSession(surface, settings, themes, log);
     }

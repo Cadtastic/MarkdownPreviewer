@@ -62,6 +62,14 @@ internal sealed class HostToPageMessage
     public bool TaskEditable { get; init; }
 
     /// <summary>
+    /// For kind "render": whether this document already had checkbox editing
+    /// turned on. Per document, so the answer travels with the file rather than
+    /// arming every document the reader opens next.
+    /// </summary>
+    [JsonPropertyName("taskEditOn")]
+    public bool TaskEditOn { get; init; }
+
+    /// <summary>
     /// For kind "render": whether trust can be granted at all. False for
     /// stream-fed items, which have no path to record a grant against — the page
     /// disables its Trust control and says why rather than offering a switch
@@ -131,6 +139,9 @@ internal sealed class PageToHostMessage
 
     /// <summary>For kind "toggleTask": the checkbox's new state.</summary>
     [JsonPropertyName("checked")]     public bool Checked { get; init; }
+
+    /// <summary>For kind "setTaskEdit": whether editing is being turned on.</summary>
+    [JsonPropertyName("enabled")]     public bool Enabled { get; init; }
 
     /// <summary>
     /// For kind "openDocument": what the reader wants done with the link —

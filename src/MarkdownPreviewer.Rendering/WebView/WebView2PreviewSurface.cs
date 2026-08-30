@@ -58,6 +58,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private readonly IExternalLinkLauncher _launcher;
     private readonly IDocumentRevealer _revealer;
     private readonly ITaskListEditor _taskEditor;
+    private readonly ITaskEditModeStore _taskEditMode;
     private readonly ITrustedDocumentStore _trust;
     private readonly IDiagnosticLog _log;
 
@@ -98,6 +99,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         IExternalLinkLauncher launcher,
         IDocumentRevealer revealer,
         ITaskListEditor taskEditor,
+        ITaskEditModeStore taskEditMode,
         ITrustedDocumentStore trust,
         IDiagnosticLog log)
     {
@@ -106,6 +108,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
         _revealer = revealer ?? throw new ArgumentNullException(nameof(revealer));
         _taskEditor = taskEditor ?? throw new ArgumentNullException(nameof(taskEditor));
+        _taskEditMode = taskEditMode ?? throw new ArgumentNullException(nameof(taskEditMode));
         _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
@@ -360,6 +363,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             DocumentName = request.Document.Location.FileName,
             DocumentGeneration = _documentGeneration,
             TaskEditable = request.Document.Location.HasDirectory && !request.Document.WasTruncated,
+            TaskEditOn = _taskEditMode.IsEnabled(request.Document.Location.FullPath),
             Trusted = _documentTrusted,
             Trustable = request.Document.Location.HasDirectory,
         };
@@ -798,6 +802,16 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 else
                 {
                     _log.Debug($"Ignored a document link that does not resolve: {message.Url}");
+                }
+
+                break;
+
+            case "setTaskEdit":
+                // Per document, so the host owns it: the page asks, the store
+                // answers on the next render.
+                if (_lastRequest is { } modeTarget)
+                {
+                    _taskEditMode.SetEnabled(modeTarget.Document.Location.FullPath, message.Enabled);
                 }
 
                 break;
