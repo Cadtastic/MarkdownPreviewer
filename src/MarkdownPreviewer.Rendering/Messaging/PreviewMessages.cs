@@ -53,6 +53,15 @@ internal sealed class HostToPageMessage
     public bool Trusted { get; init; }
 
     /// <summary>
+    /// For kind "render": whether the document's task-list checkboxes may be
+    /// edited from the preview. False for stream-fed items (no file to write)
+    /// and for truncated documents (the page's line numbers would describe a
+    /// file the editor is not looking at).
+    /// </summary>
+    [JsonPropertyName("taskEditable")]
+    public bool TaskEditable { get; init; }
+
+    /// <summary>
     /// For kind "render": whether trust can be granted at all. False for
     /// stream-fed items, which have no path to record a grant against — the page
     /// disables its Trust control and says why rather than offering a switch
@@ -112,6 +121,16 @@ internal sealed class PageToHostMessage
 
     /// <summary>For kind "imageTextRequest": the images the page wants text for.</summary>
     [JsonPropertyName("urls")]        public string[]? Urls { get; init; }
+
+    /// <summary>
+    /// For kind "toggleTask": the 0-based source line of the task marker, and
+    /// the state the reader just put the checkbox into. The host verifies the
+    /// line against the file before flipping anything.
+    /// </summary>
+    [JsonPropertyName("line")]        public long Line { get; init; } = -1;
+
+    /// <summary>For kind "toggleTask": the checkbox's new state.</summary>
+    [JsonPropertyName("checked")]     public bool Checked { get; init; }
 
     /// <summary>
     /// For kind "openDocument": what the reader wants done with the link —

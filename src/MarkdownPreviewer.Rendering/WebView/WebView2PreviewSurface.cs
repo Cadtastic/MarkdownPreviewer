@@ -57,6 +57,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private readonly IWebAssetCatalog _assets;
     private readonly IExternalLinkLauncher _launcher;
     private readonly IDocumentRevealer _revealer;
+    private readonly ITaskListEditor _taskEditor;
     private readonly ITrustedDocumentStore _trust;
     private readonly IDiagnosticLog _log;
 
@@ -96,6 +97,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         IWebAssetCatalog assets,
         IExternalLinkLauncher launcher,
         IDocumentRevealer revealer,
+        ITaskListEditor taskEditor,
         ITrustedDocumentStore trust,
         IDiagnosticLog log)
     {
@@ -103,6 +105,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
         _revealer = revealer ?? throw new ArgumentNullException(nameof(revealer));
+        _taskEditor = taskEditor ?? throw new ArgumentNullException(nameof(taskEditor));
         _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
@@ -356,6 +359,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
             Settings = Project(request.Settings),
             DocumentName = request.Document.Location.FileName,
             DocumentGeneration = _documentGeneration,
+            TaskEditable = request.Document.Location.HasDirectory && !request.Document.WasTruncated,
             Trusted = _documentTrusted,
             Trustable = request.Document.Location.HasDirectory,
         };
@@ -794,6 +798,46 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 else
                 {
                     _log.Debug($"Ignored a document link that does not resolve: {message.Url}");
+                }
+
+                break;
+
+            case "toggleTask":
+                // The reader checked or unchecked a task box. The editor
+                // re-reads the file and verifies the marker before flipping one
+                // character; on success the in-memory document is refreshed so
+                // a later redraw (theme flip, trust change) shows the new state
+                // instead of resurrecting the old one. On refusal the document
+                // is re-rendered from what is actually on disk, which snaps the
+                // checkbox back — silently, as designed, with the reason in the
+                // log.
+                if (_lastRequest is { } editTarget &&
+                    editTarget.Document.Location is { HasDirectory: true, FullPath: { } editPath } &&
+                    !editTarget.Document.WasTruncated &&
+                    message.Line is >= 0 and <= int.MaxValue)
+                {
+                    if (_taskEditor.TryToggle(editPath, (int)message.Line, message.Checked, out string updatedText))
+                    {
+                        // OriginalByteCount is only read to compose the
+                        // truncation notice, which never applies to an editable
+                        // document, so carrying the old value forward is safe.
+                        _lastRequest = new RenderRequest(
+                            new MarkdownDocument(
+                                updatedText,
+                                editTarget.Document.Location,
+                                wasTruncated: false,
+                                editTarget.Document.OriginalByteCount),
+                            editTarget.Theme,
+                            editTarget.Settings);
+                    }
+                    else
+                    {
+                        _ = RenderAsync(editTarget, CancellationToken.None);
+                    }
+                }
+                else
+                {
+                    _log.Debug("Ignoring a task toggle for an item that cannot be edited.");
                 }
 
                 break;

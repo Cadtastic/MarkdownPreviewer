@@ -5,7 +5,7 @@
  *
  *   host -> page  { kind: "render", token, markdown, theme, docBase, settings,
  *                                     documentGeneration, documentName,
- *                                     trusted, trustable }
+ *                                     trusted, trustable, taskEditable }
  *   host -> page  { kind: "theme",  theme }
  *   host -> page  { kind: "settings", settings }
  *
@@ -15,6 +15,7 @@
  *   page -> host  { kind: "openExternal", url }
  *   page -> host  { kind: "trustDocument", trusted }
  *   page -> host  { kind: "openDocument", url, mode }   mode: "navigate" | "app"
+ *   page -> host  { kind: "toggleTask", line, checked }
  *
  * Design notes worth knowing before editing:
  *
@@ -59,6 +60,9 @@
     documentName: '',         // shown in the trust dialog so it can name its subject
     documentGeneration: 0,    // changes only when the reader moves to another file
     linkMode: 'navigate',     // where local links go: 'navigate' Explorer, or 'app'ly default app
+    editTasks: false,         // the reader turned checkbox editing on
+    taskEditable: false,      // ...and this document has a file that can take the edit
+    bodyLine: 0,              // source line the rendered body starts on (after front matter)
     trusted: false,           // this document may load resources from the internet
     trustable: false          // ...and it has a path to record that grant against
   };
@@ -295,6 +299,18 @@
       return defaultFence(tokens, idx, options, env, self);
     };
 
+    // --- list items ----------------------------------------------------------
+    // Every list item carries the source line it starts on (relative to the
+    // rendered body), which is how a task checkbox finds its way back to the
+    // file when the reader edits it.
+    var defaultListItem = md.renderer.rules.list_item_open ||
+      function (tokens, idx, options, env, self) { return self.renderToken(tokens, idx, options); };
+    md.renderer.rules.list_item_open = function (tokens, idx, options, env, self) {
+      var token = tokens[idx];
+      if (token.map) { token.attrSet('data-mdp-line', String(token.map[0])); }
+      return defaultListItem(tokens, idx, options, env, self);
+    };
+
     // --- images ------------------------------------------------------------
     var defaultImage = md.renderer.rules.image;
     md.renderer.rules.image = function (tokens, idx, options, env, self) {
@@ -362,8 +378,12 @@
    */
   function splitFrontMatter(source) {
     var match = /^(﻿)?(---|\+\+\+)[ \t]*\r?\n([\s\S]*?)\r?\n\2[ \t]*(\r?\n|$)/.exec(source);
-    if (!match) { return { frontMatter: null, body: source }; }
-    return { frontMatter: match[3], body: source.slice(match[0].length) };
+    if (!match) { return { frontMatter: null, body: source, bodyLine: 0 }; }
+
+    // How many source lines the stripped block spans: everything the parser
+    // never sees still counts when a task edit is addressed back to the file.
+    var consumed = (match[0].match(/\n/g) || []).length;
+    return { frontMatter: match[3], body: source.slice(match[0].length), bodyLine: consumed };
   }
 
   function frontMatterHtml(text) {
@@ -399,10 +419,33 @@
       var box = document.createElement('input');
       box.type = 'checkbox';
       box.checked = m[1] !== ' ';
-      box.disabled = true;                     // a preview is read-only
+      // Read-only unless the reader turned editing on for a document that can
+      // take the edit; syncTaskBoxes() re-applies this when the toggle flips.
+      box.disabled = !taskEditingActive();
+      box.addEventListener('change', onTaskBoxChanged);
       container.insertBefore(box, node);
       li.classList.add('mdp-task');
     }
+  }
+
+  /*
+   * A checked box is a WRITE: the host re-reads the file, verifies the marker
+   * on the named line is a task in the state the page believes, flips that one
+   * character and saves — silently, by design; the toggle's tooltip is where
+   * the save behaviour is disclosed. If the host refuses (the file changed
+   * underneath the preview, went read-only, disappeared), it re-renders from
+   * disk, which snaps the box back to the truth.
+   */
+  function onTaskBoxChanged() {
+    var li = this.closest && this.closest('li');
+    var line = li ? parseInt(li.getAttribute('data-mdp-line'), 10) : NaN;
+
+    if (!taskEditingActive() || isNaN(line)) {
+      this.checked = !this.checked;   // not editable; undo the flip
+      return;
+    }
+
+    post({ kind: 'toggleTask', line: line + state.bodyLine, checked: this.checked });
   }
 
   // -------------------------------------------------- raw HTML sanitisation ---
@@ -602,6 +645,53 @@
     state.trusted = trusted === true;
     syncTrustToggle();
     post({ kind: 'trustDocument', trusted: state.trusted });
+  }
+
+  // ----------------------------------------------------------- task editing ---
+
+  /*
+   * Checkbox editing is opt-in and per-user, not per-document: the reader who
+   * wants clickable task lists wants them everywhere. Whether a particular
+   * document can take the edit is the host's call (taskEditable — a file on
+   * disk, not truncated), and the button disables itself when it cannot.
+   */
+  var taskEdit = { toggle: document.getElementById('task-edit') };
+
+  function taskEditingActive() {
+    return state.editTasks === true && state.taskEditable === true;
+  }
+
+  function readTaskEditPreference() {
+    try { return window.localStorage.getItem('mdp.editTasks') === '1'; }
+    catch (_) { return false; }
+  }
+
+  function storeTaskEditPreference() {
+    try { window.localStorage.setItem('mdp.editTasks', state.editTasks ? '1' : '0'); }
+    catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function syncTaskEditToggle() {
+    if (taskEdit.toggle) {
+      taskEdit.toggle.setAttribute('aria-pressed', state.editTasks ? 'true' : 'false');
+      taskEdit.toggle.disabled = !state.taskEditable;
+      taskEdit.toggle.title = !state.taskEditable
+        ? 'This document cannot be edited from the preview'
+        : state.editTasks
+          ? 'Checkboxes are editable — checking or unchecking one saves the file immediately. Click to make them read-only.'
+          : 'Make checkboxes editable. Checking or unchecking one saves the file immediately, without asking.';
+    }
+
+    syncTaskBoxes();
+  }
+
+  /* Re-applies editability to the boxes already on screen. */
+  function syncTaskBoxes() {
+    var active = taskEditingActive();
+    var boxes = content.querySelectorAll('li.mdp-task input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) {
+      boxes[i].disabled = !active;
+    }
   }
 
   // -------------------------------------------------------- link destination ---
@@ -1262,6 +1352,8 @@
     state.documentName = String(message.documentName || '');
     state.trusted = message.trusted === true;
     state.trustable = message.trustable === true;
+    state.taskEditable = message.taskEditable === true;
+    syncTaskEditToggle();
     syncTrustToggle();
     closeTrustDialog();
 
@@ -1278,6 +1370,7 @@
 
     var source = String(message.markdown == null ? '' : message.markdown);
     var split = splitFrontMatter(source);
+    state.bodyLine = split.bodyLine || 0;
     var env = {};
     var html = '';
 
@@ -1618,6 +1711,19 @@
   if (trust.dialog) {
     trust.dialog.addEventListener('click', function (event) {
       if (event.target === trust.dialog) { closeTrustDialog(); }
+    });
+  }
+
+  // --- task editing -----------------------------------------------------------------
+
+  state.editTasks = readTaskEditPreference();
+  syncTaskEditToggle();
+
+  if (taskEdit.toggle) {
+    taskEdit.toggle.addEventListener('click', function () {
+      state.editTasks = !state.editTasks;
+      storeTaskEditPreference();
+      syncTaskEditToggle();
     });
   }
 

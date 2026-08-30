@@ -42,6 +42,20 @@ internal static class MarkdownTextDecoder
                    .Replace('\r', '\n');
     }
 
+    /// <summary>
+    /// Decodes for round-trip editing: original line endings kept, nothing
+    /// trimmed, and the detected encoding plus preamble length returned so the
+    /// text can be re-encoded and the file's leading BOM bytes re-attached
+    /// verbatim. Contrast with <see cref="Decode"/>, which normalises for
+    /// rendering and is therefore not reversible.
+    /// </summary>
+    public static string DecodeForEditing(
+        ReadOnlySpan<byte> bytes, out Encoding encoding, out int preambleLength)
+    {
+        encoding = DetectEncoding(bytes, out preambleLength);
+        return encoding.GetString(bytes[preambleLength..]);
+    }
+
     private static Encoding DetectEncoding(ReadOnlySpan<byte> bytes, out int preambleLength)
     {
         if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
