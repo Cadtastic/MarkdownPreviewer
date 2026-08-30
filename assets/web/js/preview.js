@@ -65,6 +65,7 @@
     editTasks: false,         // the reader turned checkbox editing on for THIS document
     taskEditable: false,      // ...and this document has a file that can take the edit
     hasTasks: false,          // ...and there is at least one checkbox to edit
+    remoteImages: 0,          // http(s) images this document refers to, allowed or not
     expanded: false,          // document fills the pane instead of its reading measure
     bodyLine: 0,              // source line the rendered body starts on (after front matter)
     trusted: false,           // this document may load resources from the internet
@@ -175,6 +176,11 @@
         // be answered from the browser's cache. That is what makes withdrawing
         // trust take effect on the very next render instead of leaving already
         // fetched images on screen until the cached copies are evicted.
+        // Counted whether or not the URL is handed back, because the
+        // question this answers is "does this document have anything to
+        // trust?" — and a withheld image is exactly the case where it does.
+        if (kind === 'image') { state.remoteImages++; }
+
         return (kind === 'image' && !remoteImagesAllowed()) ? '' : value;
       }
       if (kind === 'link' && /^mailto:/i.test(value)) { return value; }
@@ -615,12 +621,19 @@
     if (!trust.toggle) { return; }
 
     trust.toggle.setAttribute('aria-pressed', state.trusted ? 'true' : 'false');
-    trust.toggle.disabled = !state.trustable;
+
+    // Nothing to grant is its own reason, and a different one to say: a
+    // document with no remote images gains nothing from being trusted.
+    var nothingToTrust = state.remoteImages === 0;
+    trust.toggle.disabled = !state.trustable || nothingToTrust;
+
     setTip(trust.toggle, !state.trustable
-      ? 'Trust external links\nThis item has no file on disk to trust.'
-      : state.trusted
-        ? 'External links are trusted\nImages from the internet load for this file.'
-        : 'Trust external links\nAllow this file to load images from the internet.');
+      ? 'Trust external image links\nThis item has no file on disk to trust.'
+      : nothingToTrust
+        ? 'Trust external image links\nThis document has no external image links.'
+        : state.trusted
+          ? 'External image links are trusted\nImages from the internet load for this file.'
+          : 'Trust external image links\nAllow this file to load images from the internet.');
   }
 
   function openTrustDialog() {
@@ -856,14 +869,43 @@
     catch (_) { /* storage unavailable; the choice just will not persist */ }
   }
 
+  /*
+   * Whether expanding would visibly do anything. The document is only narrower
+   * than the pane once the pane is wider than the reading measure — below that
+   * it already fills the width and the toggle is a no-op, which is worse than
+   * a disabled control because it looks broken.
+   *
+   * Measured rather than compared against 980: the cap lives in the stylesheet
+   * and this must not carry a second copy of it. Already-expanded always
+   * counts as available, or there would be no way back.
+   */
+  var EXPAND_MIN_MARGIN = 60;   // total slack, so ~30px a side
+
+  function expandAvailable() {
+    if (state.expanded) { return true; }
+
+    var pane = document.documentElement.clientWidth || window.innerWidth || 0;
+    var used = content.getBoundingClientRect().width;
+
+    // Unknown geometry (pre-layout, jsdom): do not disable on a guess.
+    if (pane === 0 || used === 0) { return true; }
+
+    return (pane - used) >= EXPAND_MIN_MARGIN;
+  }
+
   function syncExpandToggle() {
     content.classList.toggle('mdp-expanded', state.expanded === true);
 
     if (expand.toggle) {
+      var available = expandAvailable();
+
       expand.toggle.setAttribute('aria-pressed', state.expanded ? 'true' : 'false');
-      setTip(expand.toggle, state.expanded
-        ? 'Restore preview width\nBack to the centred reading width.'
-        : 'Expand preview width\nFill the pane edge to edge.');
+      expand.toggle.disabled = !available;
+      setTip(expand.toggle, !available
+        ? 'Expand preview width\nThe document already fills the pane. Widen the preview pane to use this.'
+        : state.expanded
+          ? 'Restore preview width\nBack to the centred reading width.'
+          : 'Expand preview width\nUse the empty margins either side.');
     }
 
     // A wider document moves every diagram and image, so any highlight boxes
@@ -1583,6 +1625,11 @@
     var source = String(message.markdown == null ? '' : message.markdown);
     var split = splitFrontMatter(source);
     state.bodyLine = split.bodyLine || 0;
+
+    // Recounted by resolveDocumentUrl during the parse below; without the
+    // reset a document with no remote images would inherit the last one's
+    // count and leave the trust toggle enabled with nothing to trust.
+    state.remoteImages = 0;
     var env = {};
     var html = '';
 
@@ -1611,10 +1658,14 @@
       catch (error) { warnings.push('Task lists: ' + error.message); }
     }
 
-    // Only knowable once the body is on screen, and it decides whether the
-    // edit toggle is a live control or a disabled one that says why.
+    // Only knowable once the body is on screen: whether there are checkboxes
+    // to edit, how many remote images there are to trust, and whether the
+    // document leaves any margin worth expanding into. Each decides whether
+    // its toggle is a live control or a disabled one that says why.
     state.hasTasks = content.querySelector('li.mdp-task') !== null;
     syncTaskEditToggle();
+    syncTrustToggle();
+    syncExpandToggle();
 
     markBrokenImages(content);
     requestImageText();
@@ -1891,6 +1942,7 @@
     layoutChrome();
     hideTip();              // anchored to a control that has just moved
     measureFindActions();
+    syncExpandToggle();     // margin worth reclaiming changes with the pane
 
     // Diagrams and images scale with the pane, so any overlay drawn over one
     // is now in the wrong place. Re-running is cheaper than tracking each box.

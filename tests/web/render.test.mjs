@@ -1156,8 +1156,29 @@ ok('an unlocatable item cannot be trusted', trustToggle.disabled === true);
 ok('and it says why',
    (trustToggle.getAttribute('data-mdp-tip') || '').includes('no file on disk'),
    trustToggle.getAttribute('data-mdp-tip'));
-c = render('# Located\n', {}, 'light', { trustable: true });
-ok('a real file can be trusted again', trustToggle.disabled === false);
+c = render('# Located\n\n![badge](https://cdn.example.com/b.png)\n', {}, 'light', { trustable: true });
+ok('a real file with a remote image can be trusted again', trustToggle.disabled === false);
+
+// Trust is about remote images, so a document without any has nothing to
+// grant: the toggle disables itself and says that, not "cannot be trusted".
+c = render('# Local only\n\n![local](images/pic.png)\n');
+ok('a document with no external image links disables the toggle',
+   trustToggle.disabled === true);
+ok('and the tooltip says there is nothing to trust',
+   (trustToggle.getAttribute('data-mdp-tip') || '').includes('no external image links'),
+   trustToggle.getAttribute('data-mdp-tip'));
+ok('the tooltip names images, not links in general',
+   (trustToggle.getAttribute('data-mdp-tip') || '').startsWith('Trust external image links'));
+
+// A raw-HTML image is a remote image too; the sanitiser path must count it.
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n', { allowRawHtml: true });
+ok('a raw-HTML remote image is enough to enable the toggle', trustToggle.disabled === false);
+
+// And the trusted state names images as well.
+c = render('![b](https://cdn.example.com/b.png)\n', {}, 'light', { trusted: true });
+ok('the trusted tooltip says external image links are trusted',
+   (trustToggle.getAttribute('data-mdp-tip') || '').startsWith('External image links are trusted'),
+   trustToggle.getAttribute('data-mdp-tip'));
 
 console.log(`\n${'='.repeat(46)}\n  ${pass} passed, ${fail} failed\n${'='.repeat(46)}`);
 process.exit(fail === 0 ? 0 : 1);

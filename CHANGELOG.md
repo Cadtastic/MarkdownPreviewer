@@ -21,10 +21,12 @@ leaving the pane.
   goes, and the choice persists across documents.
 
   What it cannot do is make Explorer's preview pane itself any wider — that
-  splitter belongs to Explorer. On a pane narrower than the 980px reading
-  measure the document was already filling the width, so expanding reclaims the
-  gutter and little else; the toggle earns its place on a wide pane, or beside
-  a table that wants every pixel.
+  splitter belongs to Explorer. On a pane narrower than the reading measure the
+  document already fills the width, so there is nothing to expand into — and
+  the toggle knows it: it measures the actual margin and disables itself,
+  saying so, until the pane is wide enough for expanding to visibly do
+  something. Measured rather than compared against a hard-coded 980, so the
+  stylesheet stays the only place the reading measure is defined.
 
 - **Editable task checkboxes.** A toggle in the toolbar's options row makes GFM
   task lists clickable. Checking or unchecking a box writes the change to the
@@ -110,6 +112,13 @@ leaving the pane.
   a `style` attribute.
 
 ### Changed
+
+- **The trust toggle says what it actually grants.** Its tooltips now name
+  external *image* links — the only thing trust unlocks — and the toggle
+  disables itself, saying so, for a document that has no external image links
+  at all: with nothing to grant, an enabled switch is a promise the click
+  cannot keep. Images withheld pending trust count as present, since they are
+  exactly what trusting would reveal.
 
 - **Tooltips are part of the document, not the operating system.** The native
   `title` could not take the theme, broke lines wherever it liked, and waited
