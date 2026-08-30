@@ -19,6 +19,19 @@ public static class RegistryKeys
     /// <summary>Machine-wide defaults written by the installer.</summary>
     public const string MachineSettingsPath = @"SOFTWARE\MarkdownPreviewer";
 
+    /// <summary>
+    /// Per-user list of documents the user has trusted to load remote resources.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately under HKCU only, with no machine-wide counterpart: trust is a
+    /// personal judgement about a specific file ("I wrote this one"), not
+    /// something an administrator should be able to grant on a user's behalf.
+    /// Each value is the document's full path, set to 1. Deleting a value — or
+    /// the whole key — revokes the grant, so the list stays inspectable and
+    /// clearable with regedit alone.
+    /// </remarks>
+    public const string TrustedDocumentsPath = UserSettingsPath + @"\TrustedDocuments";
+
     /// <summary>Where Windows records the light/dark preference for apps.</summary>
     public const string PersonalizePath =
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";

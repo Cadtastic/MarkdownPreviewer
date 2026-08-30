@@ -5,6 +5,165 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-08-30
+
+The toolbar is there when you arrive, and a document you wrote yourself can be
+let onto the network.
+
+### Added
+
+- **Trust external links.** A globe toggle in the toolbar's options row lets a
+  single document load images from the internet, which are otherwise blocked
+  for everyone. Turning it on requires answering a dialog that names the file
+  and says plainly what the grant costs — remote servers learn the file was
+  opened, along with the reader's IP address, which is how tracking pixels
+  work. Cancel is the focused default and `Esc` chooses it. Turning trust off
+  asks nothing: confirming the removal of a permission only teaches people to
+  click through the dialog that matters.
+
+  The grant is recorded per file, by full path, under
+  `HKCU\Software\MarkdownPreviewer\TrustedDocuments`, and survives restarts —
+  one value per document, so the list can be read and cleared with regedit
+  alone. It is deliberately HKCU-only: trust is a personal judgement about a
+  specific file, not something an administrator grants on a user's behalf. An
+  item with no file behind it (a stream pulled from a zip, a search-index hit)
+  cannot be trusted; the toggle disables itself and says why.
+
+  The grant is narrow. It lifts exactly one restriction — the host's refusal to
+  serve http(s) image requests. Scripts, frames, forms and outbound
+  connections stay blocked by CSP for trusted and untrusted documents alike.
+
+  While a document is not allowed onto the network, its remote images are never
+  given a `src` at all, so no request is issued and nothing can be answered from
+  the browser's cache. That is what makes withdrawing trust take effect on the
+  spot rather than leaving already-fetched images on screen. Each one renders as
+  a dashed amber placeholder holding its alt text, which says how to undo it —
+  distinct from the grey placeholder used for an image whose path simply cannot
+  be resolved. The host's refusal is untouched and remains the security
+  boundary; it still covers routes the page never sees, such as a remote URL in
+  a `style` attribute.
+
+### Changed
+
+- **The toolbar is visible by default.** It is the only way to reach search,
+  the contents rail, the theme selector and the trust toggle, so a document no
+  longer opens with all of that hidden behind `Ctrl+F`. `Esc` or the `×` still
+  dismisses it, scoped to the document on screen; the next selection brings it
+  back. (Closing genuinely closes — the substance of issue #1 — it is simply
+  not remembered as a standing preference.)
+- **The close button sits at the far right of the bar**, and the Contents
+  button's left edge now lands exactly on the contents rail's left edge. Both
+  widths come off one `--mdp-toc-width` token so they cannot drift apart.
+- **The search field says whether it found anything.** Its border is green
+  while there are matches and red while there are none — including when the
+  reason for none is an unfinished or invalid regular expression, which used
+  to look identical to a search that simply missed. Focus alone is now
+  neutral: the accent colour is orange in some palettes, and an orange ring
+  around a search box reads as an error.
+- **Toolbar glyphs are 24px stroked icons** with 2px of padding, replacing the
+  Unicode characters, so the controls are a uniform size and optically match
+  each other rather than the font they were drawn in. The Contents chevron is
+  one icon rotated rather than two glyphs swapped.
+### Fixed
+
+- **Clicking any in-page anchor silently killed the page's voice.** The host
+  accepts messages only from its own render page, but the comparison demanded
+  the page's exact URL — and following a heading link or a contents-rail entry
+  gives that URL a `#fragment`, which WebView2 reports as part of the message
+  source. From that click onward every message the page sent was rejected:
+  the trust toggle did nothing, and every subsequent render died on its
+  30-second timeout, leaving the pane stuck until the shell rebuilt the
+  handler. It presented as "trust works in some folders and not others",
+  because whether it worked depended on whether the reader had used the table
+  of contents yet in that pane. The source check now strips the fragment;
+  scheme, host and path still have to match exactly, and a query string is
+  still refused.
+
+- **The search belongs to the document.** Explorer reuses one page for every
+  selection, so a query typed against one file used to follow the reader to the
+  next — still in the box, still showing a match count, describing a document
+  they had already left. Moving to another file now clears the query, the count
+  and the state colour. Redrawing the *same* document keeps them, so changing
+  the theme or the trust setting no longer wipes out a search in progress; the
+  host distinguishes the two by document identity rather than the page
+  guessing.
+
+## [1.3.0] — 2026-08-30
+
+The chrome grew up: one toolbar instead of floating panels, seven themes, and
+a search that can read pictures.
+
+### Added
+
+- **Seven themes.** System (follows the host's light/dark resolution, stock
+  GitHub palettes) plus six named palettes — Paper, Arctic and Ledger (light),
+  Harbor, Midnight and Carbon (dark) — that re-tint the document and the
+  chrome together from one seventeen-token contract. Picked from a selector at
+  the right edge of the toolbar's options row; the choice persists. Named
+  palettes carry their own lightness, so the Windows colour mode stops
+  mattering while one is active. Syntax colours inside code fences keep the
+  GitHub light/dark set matching the palette's lightness.
+- **Search reads pictures.** SVG images embedded with `<img>` — previously
+  opaque, since such an SVG is a separate document the page cannot see into —
+  now have their visible text extracted by the host (locked-down XML reader:
+  DTDs prohibited, style/script/defs skipped, size-capped, cached by
+  write-time) and matched like any other text. Every image's alt and title
+  text counts too. A match boxes the whole image and joins the cycle order.
+- The context menu's *Find…* and *Toggle table of contents* now open the
+  toolbar as a whole.
+
+### Changed
+
+- **One toolbar replaces the floating panels.** Search, its options row
+  (match case, whole word, regex, theme selector) and the Contents toggle live
+  in a fixed bar at the top; the document always starts below it. The contents
+  panel is now a rail docked under the toolbar on the right (it may hang over
+  the document — it is chrome the reader summoned), toggled from the toolbar,
+  disabled for documents with fewer than two headings. One `×` (or `Esc`)
+  closes everything. The find bar's drag grip, the separate close buttons and
+  the collapse-to-pill behaviour are gone with the panels they belonged to.
+- **The WebView2 profile is partitioned per host executable.** The
+  shared-browser compatibility check includes the host executable's identity,
+  so two different host programs (prevhost and Outlook's reading pane, or the
+  dev harness) could collide on one profile and fail with `0x8007139F`
+  regardless of the 1.1.0 retry. Explorer's prevhosts still share one browser;
+  different hosts can no longer collide at all.
+
+### Fixed
+
+- Searching while an image was still loading could box it at the wrong place;
+  overlays are repositioned when images finish loading and when the pane is
+  resized.
+
+## [1.2.0] — 2026-08-30
+
+Search grew the switches people expect from an editor, and learned to look
+inside rendered diagrams.
+
+### Added
+
+- **Search options**, behind a gear in the find bar: **match case**, **match
+  whole word**, and **regular expression**. The three are independent and
+  combine freely, and the choices persist. Combining whole word with a regular
+  expression wraps the pattern as `\b(?:pattern)\b`, so a pattern that begins
+  or ends with a non-word character — `\d+\.`, `-foo` — cannot match; that is
+  inherent to word boundaries and matches how editors with both switches
+  behave. An unfinished or invalid pattern says `bad pattern` on the bar
+  instead of silently reporting nothing found.
+- **Text inside rendered diagrams is searchable.** A Mermaid diagram draws its
+  labels as SVG, which the search skipped entirely — searching a document for
+  `Domain` found nothing even with `Domain` plainly visible in the chart. Those
+  labels are now matched, counted, and reachable with the cycle arrows like any
+  other match. They cannot be wrapped in `<mark>` (an HTML element inside
+  `<svg>` does not render), so each one is boxed by a highlight drawn over it,
+  which follows the diagram as the page scrolls and is redrawn if the pane is
+  resized.
+
+### Changed
+
+- **The close buttons on the find bar and the contents panel are larger.** At
+  the size of the cycle arrows beside them they were an easy thing to miss.
+
 ## [1.1.1] — 2026-08-30
 
 Fixes [#1](https://github.com/Cadtastic/MarkdownPreviewer/issues/1). The find
@@ -151,6 +310,9 @@ Initial release.
 - NSIS installer with .NET and WebView2 prerequisite detection, plus
   registration, diagnostic and Explorer-restart scripts.
 
+[1.4.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.4.0
+[1.3.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.3.0
+[1.2.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.2.0
 [1.1.1]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Cadtastic/MarkdownPreviewer/releases/tag/v1.0.0

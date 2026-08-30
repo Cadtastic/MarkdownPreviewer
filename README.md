@@ -26,11 +26,19 @@ does, but integrated where you already are.
 - **Syntax highlighting** — highlight.js, 64 curated languages
 - **Mermaid diagrams** — ` ```mermaid ` fences render as real diagrams
 - **LaTeX math** — MathJax SVG output for `$$…$$` (and `$…$`, opt-in)
-- **Light/dark theming** — follows the Windows app colour mode, or pin one
-- **Find in page** — `Ctrl+F` searches the rendered document, highlights every
-  match, and cycles with `Enter` / `Shift+Enter` (or `F3`); `Esc` closes
-- **Floating table of contents** — collapse it to a pill with its chevron,
-  hide it with its × button, bring it back from the right-click menu
+- **Seven themes** — System follows the Windows colour mode; Paper, Arctic and
+  Ledger (light) and Harbor, Midnight and Carbon (dark) re-tint the document
+  and the chrome together, picked from the toolbar and remembered
+- **One toolbar, there when you arrive** — a top bar holding search, its
+  options row (match case, whole word, regex, the trust toggle and the theme
+  selector), and the contents toggle. The document always starts below it; the
+  × at the far right (or `Esc`) dismisses it for the document on screen, and
+  the next one brings it back
+- **Search sees pictures** — text drawn inside Mermaid diagrams is highlighted
+  in place; SVG images get their text extracted by the host and matched; every
+  image's alt and title text counts too, with matches boxing the image
+- **Docked table of contents** — a contents rail under the toolbar on the
+  right, toggled from the toolbar, remembered across documents
 - **Share the document, not a dead link** — right-click → "Share document…"
   opens the Windows share sheet with the actual file; "Copy document" puts the
   file itself on the clipboard for pasting into mail or chat
@@ -42,8 +50,11 @@ does, but integrated where you already are.
   only when a document actually uses them, so arrow-keying through a folder of
   plain READMEs stays instant
 - **Private by default** — strict CSP, no network access; remote images
-  (badges) are a per-user opt-in because a passive previewer should not
-  announce what you clicked
+  (badges) are blocked because a passive previewer should not announce what
+  you clicked
+- **Trust a document you wrote** — a globe toggle in the options row lets a
+  single file load remote images, after a dialog that names the file and says
+  what the grant costs. Recorded per file and remembered
 
 ## Why not just use PowerToys?
 
@@ -129,7 +140,7 @@ the behaviour lives:
 ```powershell
 cd tests\web
 npm install
-npm test          # 125 assertions, no browser required
+npm test          # 175 assertions, no browser required
 ```
 
 When you do need to test in Explorer, `scripts\Restart-Explorer.ps1` clears the
@@ -175,11 +186,16 @@ unless noted. Bad values are clamped, never fatal.
 | `AllowRemoteImages` | **0** | Load images from http(s) hosts (badges) — see below |
 | `TaskLists` | 1 | `- [ ]` / `- [x]` as checkboxes |
 | `ShowFrontMatter` | 1 | Show YAML/TOML front matter in a collapsed block |
-| `FollowSystemTheme` | 1 | Follow the Windows apps colour mode |
+| `FollowSystemTheme` | 1 | Follow the Windows apps colour mode (System theme only) |
 | `FixedTheme` | `Light` | `REG_SZ`. Used when `FollowSystemTheme` is 0 |
 | `FontScalePercent` | 100 | Base font size, clamped to 50–300 |
 | `MaximumBytes` | 4194304 | Read cap; larger files are truncated with a notice |
 | `LogLevel` | *(absent)* | 0=Debug…3=Error. Absent disables logging entirely |
+
+The toolbar's theme selector (System plus six named palettes) is a per-user
+choice stored in the preview's own browser profile. `FollowSystemTheme` and
+`FixedTheme` decide what **System** means; a named theme carries its own
+lightness and ignores them.
 
 ### Defaults that are deliberate decisions
 
@@ -193,7 +209,7 @@ invoices.
 them on, previewing a file can tell a third-party server that you looked at it.
 Off, badge images (shields.io and friends) show as labelled placeholders. Turn
 it on if you preview a lot of badge-heavy READMEs and accept the network
-traffic.
+traffic — or leave it off and trust individual documents instead (below).
 
 **`AllowRawHtml` = 1 — but what renders is the sanitised form.** GitHub-style
 READMEs lean heavily on raw HTML (`<p align="center">`, badge rows,
@@ -202,6 +218,37 @@ anything reaches the DOM, a sanitiser strips `<script>`, `<iframe>`, `<form>`,
 every `on*` handler, and any `javascript:`/`file:` URL — and CSP forbids inline
 script and network access independently. Set it to 0 for strictly-Markdown
 rendering.
+
+### Trusting a single document
+
+`AllowRemoteImages` is all-or-nothing, and most people want the opposite: a
+couple of their own documents allowed onto the network and everything else
+still blocked. The globe toggle in the toolbar's options row does that. Turning
+it on asks first — a dialog that names the file and says what the grant costs
+— and turning it off asks nothing.
+
+Grants live in `HKCU\Software\MarkdownPreviewer\TrustedDocuments`, one value per
+document, named by full path and set to `1`. That is a readable list on
+purpose: deleting a value revokes one document, deleting the key revokes
+everything, and neither needs this program. There is no machine-wide
+equivalent, because trust here is a judgement about a specific file that only
+the person reading it can make.
+
+An item with no file behind it — a stream pulled out of a zip, a search-index
+hit — cannot be trusted, since there is no path to record the grant against.
+The toggle disables itself and says so.
+
+The grant is narrower than the name suggests. It lifts exactly one restriction:
+the host's refusal to serve http(s) image requests. Scripts, frames, forms and
+outbound connections stay blocked by CSP for trusted and untrusted documents
+alike, so the most a trusted document can do is tell a remote server that it
+was opened.
+
+Until a document is allowed onto the network, its remote images are never given
+a URL, so no request is made at all — they render as dashed amber placeholders
+carrying their alt text. That also means turning trust off takes effect
+immediately, rather than leaving already-loaded images on screen until the
+browser's cached copies expire.
 
 Logging is off unless `LogLevel` is set, because the handler runs on every file
 selection and an always-on log would record the path of every Markdown file you
@@ -227,7 +274,8 @@ A previewed file is untrusted input, and the handler treats it that way:
 
 - The page runs under a strict CSP with `connect-src 'none'` — a Markdown file
   cannot phone home. Remote images are additionally blocked host-side unless
-  the user opts in via `AllowRemoteImages`.
+  the user opts in, either through `AllowRemoteImages` or by trusting the
+  individual document (below).
 - Raw HTML renders only after sanitisation: scripts, frames, forms, event
   handlers, and dangerous URL schemes never reach the DOM.
 - The document's folder is exposed through a virtual host rather than `file://`,

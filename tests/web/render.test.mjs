@@ -82,7 +82,7 @@ console.log('\n== startup handshake ==');
 ok('page posted {kind:"ready"}', posted.some(m => m.kind === 'ready'), JSON.stringify(posted));
 ok('host listener registered', listeners.length === 1);
 
-function render(markdown, settings = {}, theme = 'light') {
+function render(markdown, settings = {}, theme = 'light', envelope = {}) {
   posted.length = 0;
   listeners[0]({
     data: {
@@ -91,6 +91,14 @@ function render(markdown, settings = {}, theme = 'light') {
       markdown,
       theme,
       docBase: 'https://doc.mdpreview.invalid/notes/',
+      // One generation by default, so a bare render() reads as "the same
+      // document again" and does not clear the find bar out from under a test.
+      // Pass a different one through `envelope` to model a new selection.
+      documentGeneration: 1,
+      documentName: 'notes.md',
+      trusted: false,
+      trustable: true,
+      ...envelope,
       settings: {
         allowRawHtml: false, linkify: true, typographer: false, highlight: true,
         mermaid: false, math: false, singleDollarMath: false, taskLists: true,
@@ -154,9 +162,55 @@ ok('parent-relative path resolves within the host',
    c.querySelector('img')?.getAttribute('src') === 'https://doc.mdpreview.invalid/shared/pic.png',
    `got ${c.querySelector('img')?.getAttribute('src')}`);
 
-c = render('![alt](https://cdn.example.com/pic.png)\n');
-ok('absolute https image left intact',
+console.log('\n== remote images follow the permission, not the cache ==');
+// The host refuses these requests too — that is the boundary — but the page
+// withholds the URL so no request is issued at all. Without that, withdrawing
+// trust left already-fetched images on screen: the <img> was recreated with the
+// same src and answered from the browser cache, so the host's gate was never
+// consulted.
+const remoteDoc = '![alt](https://cdn.example.com/pic.png)\n';
+
+c = render(remoteDoc);
+ok('untrusted document emits no remote <img> at all', c.querySelector('img') === null);
+ok('the alt text survives as a placeholder',
+   c.querySelector('span.mdp-broken')?.textContent === 'alt');
+ok('and it reads as blocked, not as broken', !!c.querySelector('span.mdp-blocked'));
+ok('the placeholder says how to undo it',
+   (c.querySelector('span.mdp-blocked')?.getAttribute('title') ?? '').includes('Trust this document'));
+
+c = render(remoteDoc, {}, 'light', { trusted: true });
+ok('a trusted document emits the real src',
    c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/pic.png');
+
+// The regression the user hit: withdrawing has to take effect on this render,
+// not on some later one.
+c = render(remoteDoc, {}, 'light', { trusted: false });
+ok('withdrawing trust drops the image on the very next render',
+   c.querySelector('img') === null && !!c.querySelector('span.mdp-blocked'));
+
+// The standing preference is a separate door to the same room, and the page has
+// to honour it or setting AllowRemoteImages would appear to do nothing.
+c = render(remoteDoc, { allowRemoteImages: true });
+ok('AllowRemoteImages alone is enough, without trusting the document',
+   c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/pic.png');
+
+// A path that cannot be resolved is not the same as one held back, and must not
+// claim the reader can fix it from the toolbar. (markdown-it refuses file: and
+// javascript: itself, before our rule runs — ms-appx: reaches us.)
+c = render('![missing](ms-appx:///images/logo.png)\n');
+ok('an unusable scheme is broken, not blocked',
+   !!c.querySelector('span.mdp-broken') && !c.querySelector('span.mdp-blocked'),
+   c.innerHTML);
+
+// Raw HTML goes through the sanitiser rather than the image rule; it is the
+// same funnel underneath, so it must reach the same answer.
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n', { allowRawHtml: true });
+ok('raw-HTML remote images are stripped too when untrusted',
+   c.querySelector('img')?.hasAttribute('src') !== true);
+c = render('<img src="https://cdn.example.com/raw.png" alt="raw">\n',
+           { allowRawHtml: true }, 'light', { trusted: true });
+ok('and kept when the document is trusted',
+   c.querySelector('img')?.getAttribute('src') === 'https://cdn.example.com/raw.png');
 
 console.log('\n== SECURITY: dangerous URL schemes ==');
 // markdown-it's own validateLink refuses these outright, so no anchor is emitted
@@ -257,49 +311,63 @@ ok('click routed to the host as openDocument',
    JSON.stringify(posted));
 ok('doc link NOT sent as openExternal', !posted.some(m => m.kind === 'openExternal'));
 
-console.log('\n== floating table of contents ==');
+console.log('\n== contents rail ==');
 const tocEl = window.document.getElementById('toc');
+const findBarEl = window.document.getElementById('toolbar');
+const tocToggle = window.document.getElementById('toc-toggle');
+const openBar = () => window.document.dispatchEvent(
+  new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 c = render('# One\n\n## Two\n\n## Three\n');
-ok('TOC visible for a document with headings', !isHidden(tocEl));
-ok('TOC lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
+ok('a new document brings the toolbar back after Esc', !isHidden(findBarEl));
+ok('rail comes up with the toolbar on a heading-ful document', !isHidden(tocEl));
+openBar();
+ok('Ctrl+F on an open toolbar leaves the rail alone', !isHidden(tocEl));
+ok('rail lists every heading', window.document.querySelectorAll('#toc-list a').length === 3,
    `got ${window.document.querySelectorAll('#toc-list a').length}`);
-ok('TOC entries link to the heading anchors',
+ok('rail entries link to the heading anchors',
    window.document.querySelector('#toc-list a')?.getAttribute('href') === '#one');
+ok('Contents button reads as expanded', tocToggle.getAttribute('aria-expanded') === 'true');
+
+// The toolbar's Contents button is the rail's only control.
+tocToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('Contents button hides the rail', isHidden(tocEl));
+ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
+tocToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('Contents button brings it back', !isHidden(tocEl));
 
 c = render('plain text, no headings\n');
-ok('TOC hidden for a document without headings', isHidden(tocEl),
-   'the panel is still rendered -- see issue #1');
+ok('rail hidden for a document without headings', isHidden(tocEl));
+ok('Contents button disabled without headings', tocToggle.disabled === true);
 
 c = render('# One\n\n## Two\n');
-ok('TOC returns for the next heading-ful document', !isHidden(tocEl));
+ok('rail returns for the next heading-ful document', !isHidden(tocEl));
+ok('Contents button re-enabled', tocToggle.disabled === false);
 
-// Collapse: shrinks to the "Contents" pill; independent of visibility; persists.
-window.document.getElementById('toc-header').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('header click collapses', tocEl.classList.contains('mdp-collapsed'));
-ok('collapse persisted', window.localStorage.getItem('mdp.tocCollapsed') === '1');
-window.document.getElementById('toc-collapse').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('chevron click expands again', !tocEl.classList.contains('mdp-collapsed'));
-
-// Hide via the x button; reshow via the host's context-menu message.
-window.document.getElementById('toc-hide').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-ok('x button hides the panel', isHidden(tocEl), 'the x button did not hide it -- see issue #1');
-ok('hide persisted', window.localStorage.getItem('mdp.toc') === '0');
+// The host's context-menu entry opens the toolbar along with the rail.
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing the toolbar takes the rail with it', isHidden(tocEl));
 listeners[0]({ data: { kind: 'toc' } });
-ok('host toc message shows it again', !isHidden(tocEl));
+ok('host toc message reopens toolbar and rail',
+   !isHidden(window.document.getElementById('toolbar')) && !isHidden(tocEl));
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
 console.log('\n== find in page ==');
-const findBar = window.document.getElementById('find');
+const findBar = window.document.getElementById('toolbar');
 const findInput = window.document.getElementById('find-input');
 const findCount = window.document.getElementById('find-count');
 const ctrlF = () => window.document.dispatchEvent(
   new window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
 
 c = render('# Widgets\n\nThe widget counts widgets. A WIDGET is not a gadget.\n');
-ok('find bar hidden until asked for', isHidden(findBar),
-   'the bar renders on every document -- see issue #1');
+ok('toolbar visible by default', !isHidden(findBar));
 
 ctrlF();
-ok('Ctrl+F opens the find bar', !isHidden(findBar));
+ok('Ctrl+F leaves an already-open toolbar open', !isHidden(findBar));
+ok('the document is pushed below the toolbar',
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '' &&
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') !== '0px');
 
 // runFind is debounced behind the input event; call the same path directly by
 // typing and firing input, then waiting past the debounce.
@@ -359,8 +427,10 @@ listeners[0]({ data: { kind: 'find' } });
 findInput.value = 'mermaid';
 findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
 await new Promise(r => setTimeout(r, 200));
-ok('style/svg internals excluded from matches', findCount.textContent === '1/1',
-   `got ${findCount.textContent} — invisible <style>/<svg> text must not count`);
+ok('style internals still excluded, diagram label now counted',
+   findCount.textContent === '1/2',
+   `got ${findCount.textContent} — the <style> block holds two more "mermaid" ` +
+   `strings that must not count, while the visible <text> label must`);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
 // The host's context-menu entry opens (never toggles) the bar.
@@ -371,47 +441,173 @@ listeners[0]({ data: { kind: 'find' } });
 ok('a second host find message leaves it open', findBar.hidden === false);
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
-console.log('\n== find bar: closing, reopening, moving ==');
-// Regression cover for issue #1: every one of these passed against the .hidden
-// property while the bar stayed on screen. They assert computed display.
+console.log('\n== toolbar: closing and reopening ==');
+// Regression cover for issue #1: these once passed against the .hidden
+// property while the chrome stayed on screen. They assert computed display.
 c = render('# Widgets\n\nThe widget counts widgets.\n');
 const click = (id) => window.document.getElementById(id)
   .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 ctrlF();
-ok('bar open before closing', !isHidden(findBar));
-click('find-close');
-ok('close button hides the bar', isHidden(findBar), 'the x did nothing -- see issue #1');
+ok('toolbar open before closing', !isHidden(findBar));
+click('toolbar-close');
+ok('close button hides the toolbar', isHidden(findBar));
 ok('closing clears the highlights', c.querySelectorAll('mark.mdp-find').length === 0);
+ok('closing releases the document strip',
+   window.document.documentElement.style.getPropertyValue('--mdp-bar-offset') === '0px');
 
 ctrlF();
-ok('Ctrl+F reopens a hidden bar', !isHidden(findBar));
-click('find-close');
+ok('Ctrl+F reopens a closed toolbar', !isHidden(findBar));
+click('toolbar-close');
 listeners[0]({ data: { kind: 'find' } });
-ok('the context menu reopens a hidden bar', !isHidden(findBar));
+ok('the context menu reopens a closed toolbar', !isHidden(findBar));
+click('toolbar-close');
 
-// Undragged, the document reserves a strip so the bar cannot cover the title.
-ok('document reserves space for the bar',
-   window.document.body.classList.contains('mdp-find-reserved'));
+console.log('\n== find options: case, whole word, regex ==');
+// All three are independent and combine; regex + whole word wraps the pattern
+// as \\b(?:...)\\b, which is why a pattern edged with non-word characters
+// legitimately finds nothing.
+const setOpt = (id, on) => {
+  const box = window.document.getElementById(id);
+  box.checked = on;
+  box.dispatchEvent(new window.Event('change', { bubbles: true }));
+};
+const search = async (text) => {
+  findInput.value = text;
+  findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 200));
+  return findCount.textContent;
+};
 
-// Dragging by the grip moves the bar and releases that strip.
-const grip = window.document.getElementById('find-grip');
-const pointer = (type, x, y) => window.dispatchEvent(
-  new window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
-grip.dispatchEvent(new window.MouseEvent('pointerdown',
-  { clientX: 20, clientY: 20, button: 0, bubbles: true, cancelable: true }));
-pointer('pointermove', 320, 260);
-pointer('pointerup', 320, 260);
+c = render('# Widget\n\nwidget WIDGET widgets Widget-maker.\n');
+ctrlF();
 
-ok('drag moved the bar', findBar.style.left !== '' && findBar.style.top !== '',
-   `left=${findBar.style.left} top=${findBar.style.top}`);
-ok('a moved bar releases the reserved strip',
-   !window.document.body.classList.contains('mdp-find-reserved'));
-ok('position persisted for the next document',
-   JSON.parse(window.localStorage.getItem('mdp.findPos') || 'null')?.left > 0);
+ok('case-insensitive by default', (await search('widget')) === '1/5',
+   `got ${findCount.textContent}`);
 
-click('find-close');
-ok('a moved bar still closes', isHidden(findBar));
+setOpt('find-case', true);
+ok('match case narrows to exact casing', findCount.textContent === '1/2',
+   `got ${findCount.textContent}`);
+ok('match case persisted',
+   JSON.parse(window.localStorage.getItem('mdp.findOpts')).matchCase === true);
+
+setOpt('find-case', false);
+setOpt('find-word', true);
+ok('whole word drops the plural but keeps hyphenated',
+   findCount.textContent === '1/4', `got ${findCount.textContent}`);
+
+setOpt('find-word', false);
+setOpt('find-regex', true);
+ok('regex metacharacters are live', (await search('W.dget')) === '1/5',
+   `got ${findCount.textContent}`);
+setOpt('find-word', true);
+ok('regex + whole word combine', (await search('w.dgets')) === '1/1',
+   `got ${findCount.textContent}`);
+setOpt('find-word', false);
+
+// A half-typed pattern must not throw or silently read as no matches.
+await search('widget(');
+ok('invalid pattern reported, not thrown', findCount.textContent === 'bad pattern',
+   `got ${findCount.textContent}`);
+ok('invalid pattern flagged on the bar', findBar.classList.contains('mdp-find-invalid'));
+
+setOpt('find-regex', false);
+await search('widget(');
+ok('the same text is a literal search once regex is off',
+   findCount.textContent === '0/0', `got ${findCount.textContent}`);
+ok('invalid flag cleared', !findBar.classList.contains('mdp-find-invalid'));
+
+// The options row is part of the toolbar, and it remembers being open.
+const optsPanel = window.document.getElementById('find-opts');
+ok('options row hidden until asked for', isHidden(optsPanel));
+click('find-options');
+ok('gear opens the options row', !isHidden(optsPanel));
+ok('row open state persisted', window.localStorage.getItem('mdp.optsRow') === '1');
+const offsetWithRow = window.document.documentElement.style.getPropertyValue('--mdp-bar-offset');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ctrlF();
+ok('reopened toolbar restores the open row', !isHidden(optsPanel));
+click('find-options');
+ok('gear closes the row again', isHidden(optsPanel));
+ok('row closed state persisted', window.localStorage.getItem('mdp.optsRow') === '0');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+void offsetWithRow;
+
+console.log('\n== find inside a rendered diagram ==');
+// The reported bug: text drawn inside a mermaid SVG was invisible to search.
+// It cannot be wrapped in <mark> (an HTML element inside <svg> does not
+// render), so it is boxed by an overlay instead.
+c = render('# Architecture\n\nThe Domain layer is inside.\n');
+c.insertAdjacentHTML('beforeend',
+  '<div class="mermaid-block"><svg data-processed="true">' +
+  '<style>#mermaid-2 .node{fill:#fff}</style>' +
+  '<g><text>Domain</text></g><g><text>Application</text></g></svg></div>');
+listeners[0]({ data: { kind: 'find' } });
+ok('diagram label is found', (await search('Domain')) === '1/2',
+   `got ${findCount.textContent} — the prose match plus the diagram label`);
+
+const overlays = window.document.querySelectorAll('.mdp-find-overlay');
+ok('the diagram match is boxed by an overlay', overlays.length === 1,
+   `got ${overlays.length}`);
+ok('the overlay counts as a match', overlays[0].classList.contains('mdp-find'));
+
+enter(false);
+ok('arrows cycle into the diagram match',
+   overlays[0].classList.contains('mdp-find-current'), `counter ${findCount.textContent}`);
+
+await search('Application');
+ok('a label with no prose twin is still found', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing removes the diagram overlays',
+   window.document.querySelectorAll('.mdp-find-overlay').length === 0);
+
+console.log('\n== find inside images: alt, title, extracted SVG text ==');
+// An <img>-loaded SVG is a separate document the page cannot see into; the
+// HOST extracts its text and posts it back. Alt and title need no host at
+// all. Either way the match boxes the whole image.
+posted.length = 0;
+c = render('# Pics\n\n![layer diagram](images/arch.svg)\n\n![screenshot](images/shot.png \"login screen\")\n');
+
+const textReq = posted.find(m => m.kind === 'imageTextRequest');
+ok('page asks the host for SVG text only', !!textReq && textReq.urls.length === 1 &&
+   textReq.urls[0] === 'https://doc.mdpreview.invalid/notes/images/arch.svg',
+   JSON.stringify(textReq));
+
+ctrlF();
+await search('screenshot');
+ok('alt text matches as an image box', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+ok('the box is an image overlay',
+   window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length === 1);
+
+await search('login');
+ok('title text matches too', findCount.textContent === '1/1', `got ${findCount.textContent}`);
+
+await search('Adapters');
+ok('nothing before the host answers', findCount.textContent === '0/0',
+   `got ${findCount.textContent}`);
+
+listeners[0]({ data: { kind: 'imageText', images: [
+  { url: 'https://doc.mdpreview.invalid/notes/images/arch.svg',
+    text: 'Domain Application Adapters Shell' }
+] } });
+await new Promise(r => setTimeout(r, 30));
+ok('host-extracted SVG text turns into a match', findCount.textContent === '1/1',
+   `got ${findCount.textContent}`);
+ok('the SVG match boxes its image',
+   window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length === 1);
+
+// One box per image, however often the pattern occurs inside it: 'a' hits
+// the SVG image's alt AND its extracted text, several times each.
+await search('a');
+const imageBoxes = window.document.querySelectorAll('.mdp-find-overlay.mdp-find-image').length;
+ok('an image is never boxed twice for one query', imageBoxes === 1, `got ${imageBoxes}`);
+
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('closing removes image overlays too',
+   window.document.querySelectorAll('.mdp-find-overlay').length === 0);
 
 console.log('\n== render completion reporting ==');
 c = render('# done\n');
@@ -437,13 +633,44 @@ for (const hostToken of [2, 7, 99, 100000]) {
 }
 
 console.log('\n== theme switching ==');
-render('# t\n', {}, 'dark');
+const rootEl = window.document.documentElement;
 const media = id => window.document.getElementById(id).media;
+const themeSelect = window.document.getElementById('theme-select');
+
+render('# t\n', {}, 'dark');
 ok('dark body stylesheet enabled',  media('css-body-dark') === 'all');
 ok('light body stylesheet disabled', media('css-body-light') === 'not all');
 ok('dark code stylesheet enabled',  media('css-code-dark') === 'all');
+ok('System dark maps to the stock GitHub palette',
+   rootEl.getAttribute('data-mdp-theme') === 'github-dark');
 render('# t\n', {}, 'light');
 ok('flips back to light', media('css-body-light') === 'all' && media('css-body-dark') === 'not all');
+ok('System light maps to the stock GitHub palette',
+   rootEl.getAttribute('data-mdp-theme') === 'github-light');
+
+// Named palettes: fixed lightness, host signal stops mattering.
+themeSelect.value = 'harbor';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('named dark palette applies its attribute', rootEl.getAttribute('data-mdp-theme') === 'harbor');
+ok('named dark palette forces the dark sheets', media('css-body-dark') === 'all');
+ok('theme choice persisted', window.localStorage.getItem('mdp.theme') === 'harbor');
+ok('colour-scheme follows the palette', rootEl.style.colorScheme === 'dark');
+
+render('# t\n', {}, 'light');
+ok('host light signal does not override a named dark palette',
+   rootEl.getAttribute('data-mdp-theme') === 'harbor' && media('css-body-dark') === 'all');
+
+themeSelect.value = 'paper';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok('switching to a light palette flips the sheets',
+   rootEl.getAttribute('data-mdp-theme') === 'paper' && media('css-body-light') === 'all');
+
+themeSelect.value = 'system';
+themeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+render('# t\n', {}, 'dark');
+ok('back on System, the host signal rules again',
+   rootEl.getAttribute('data-mdp-theme') === 'github-dark');
+render('# t\n', {}, 'light');
 
 console.log('\n== lazy asset loading (a 2.1 MB / 3.5 MB decision per document) ==');
 async function assetsFor(md, settings) {
@@ -517,6 +744,177 @@ ok('document body still rendered', window.document.getElementById('content').chi
 console.log('\n== truncation notice passthrough ==');
 c = render('> **Preview truncated.** Showing the first part of a 12.0 MB file.\n\n# Body\n');
 ok('host-injected notice renders as a blockquote', !!c.querySelector('blockquote strong'));
+
+console.log('\n== the search belongs to the document ==');
+// Explorer reuses one page for every selection, so a query typed against one
+// file used to follow the reader to the next and report a count for a document
+// they had already left.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+ctrlF();
+ok('a query finds its matches', (await search('widget')) === '1/3', findCount.textContent);
+
+// Same document, drawn again — a theme flip or a trust change. The query has to
+// survive, or those controls would wipe out a search in progress.
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+await new Promise(r => setTimeout(r, 50));
+ok('a redraw of the same document keeps the query', findInput.value === 'widget');
+ok('and re-runs it against the rebuilt DOM',
+   c.querySelectorAll('mark.mdp-find').length === 3,
+   `${c.querySelectorAll('mark.mdp-find').length} marks`);
+
+// A different file: the query, the count and the colour all belong to the
+// document that is gone.
+c = render('# Gadgets\n\nGadgets only.\n', {}, 'light', { documentGeneration: 2 });
+await new Promise(r => setTimeout(r, 50));
+ok('moving to another document clears the query', findInput.value === '');
+ok('and the match count', findCount.textContent === '');
+ok('and the state colour', !['hit', 'miss', 'invalid']
+   .some(n => findBar.classList.contains(`mdp-find-${n}`)));
+ok('nothing is highlighted in the new document',
+   c.querySelectorAll('mark.mdp-find').length === 0);
+
+// The debounce is the trap: a pending search for the old text must not land in
+// the new document a moment after it was cleared.
+findInput.value = 'gadgets';
+findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+c = render('# Sprockets\n\nSprockets only.\n', {}, 'light', { documentGeneration: 3 });
+await new Promise(r => setTimeout(r, 250));
+ok('a debounced search does not fire into the next document',
+   findInput.value === '' && c.querySelectorAll('mark.mdp-find').length === 0,
+   `value=${JSON.stringify(findInput.value)} marks=${c.querySelectorAll('mark.mdp-find').length}`);
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== toolbar: visible by default, dismissed per document ==');
+// The toolbar is the only way to reach search, the contents rail, the theme
+// and the trust control, so closing it is scoped to the document on screen.
+// It must still genuinely close -- that half is issue #1.
+c = render('# Widgets\n\nWidgets everywhere.\n');
+ok('a fresh document shows the toolbar', !isHidden(findBar));
+click('toolbar-close');
+ok('close still hides it', isHidden(findBar));
+c = render('# Gadgets\n\nGadgets now.\n');
+ok('the next document brings it back', !isHidden(findBar));
+ok('closing is NOT remembered as a preference',
+   window.localStorage.getItem('mdp.toolbar') === null);
+
+console.log('\n== toolbar geometry ==');
+// The close button is the last thing in the row, and the group holding it is
+// exactly as wide as the contents rail -- which is what puts the Contents
+// button's left edge on the rail's left edge.
+const toolbarRow = window.document.querySelector('.mdp-toolbar-row');
+ok('close button is the last control in the row',
+   toolbarRow.querySelector('.mdp-toolbar-right').lastElementChild.id === 'toolbar-close');
+ok('Contents button leads the right-hand group',
+   toolbarRow.querySelector('.mdp-toolbar-right').firstElementChild.id === 'toc-toggle');
+// The alignment is only durable if both widths come off the same token, so
+// that is what is asserted -- jsdom does not resolve custom properties, and a
+// resolved pixel figure would not prove they are tied together anyway.
+const railWidth = window.getComputedStyle(tocEl).width;
+const groupWidth = window.getComputedStyle(window.document.querySelector('.mdp-toolbar-right')).width;
+ok('the rail takes its width from the shared token',
+   railWidth === 'var(--mdp-toc-width)', railWidth);
+ok('the right-hand group is that same width less the row padding',
+   groupWidth === 'calc(var(--mdp-toc-width) - var(--mdp-toolbar-pad))', groupWidth);
+
+// Every glyph is a 24px icon in a button that adds no more than 2px around it.
+const icons = [...window.document.querySelectorAll('.mdp-toolbar .mdp-icon')];
+ok('the toolbar is drawn with icons, not glyphs', icons.length >= 5, `${icons.length} icons`);
+ok('every toolbar icon is 24px square',
+   icons.every(i => window.getComputedStyle(i).width === '24px' &&
+                    window.getComputedStyle(i).height === '24px'));
+ok('icon buttons pad by 2px',
+   window.getComputedStyle(window.document.getElementById('find-next')).padding === '2px',
+   window.getComputedStyle(window.document.getElementById('find-next')).padding);
+
+console.log('\n== search field state colours ==');
+// Green with matches, red without, red for a pattern that will not compile,
+// and neutral when there is nothing to say.
+ctrlF();
+const findState = () => ['hit', 'miss', 'invalid']
+  .filter(n => findBar.classList.contains(`mdp-find-${n}`)).join(',') || 'neutral';
+
+c = render('# Widgets\n\nThe widget counts widgets.\n');
+ctrlF();
+await search('widget');
+ok('matches turn the field green', findState() === 'hit', findState());
+await search('nothing-here');
+ok('no matches turn it red', findState() === 'miss', findState());
+await search('');
+ok('an empty query is neutral again', findState() === 'neutral', findState());
+
+setOpt('find-regex', true);
+await search('widget(');
+ok('an uncompilable pattern reads as red, not as a miss',
+   findState() === 'invalid', findState());
+ok('the counter says why', findCount.textContent === 'bad pattern');
+await search('widget');
+ok('a valid pattern goes green', findState() === 'hit', findState());
+setOpt('find-regex', false);
+await search('');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+console.log('\n== trust external links ==');
+const trustToggle = window.document.getElementById('trust-toggle');
+const trustDialog = window.document.getElementById('trust-dialog');
+
+c = render('# Remote\n\n![pixel](https://example.invalid/p.png)\n');
+ok('untrusted document reads as not pressed',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+ok('trust dialog closed to begin with', isHidden(trustDialog));
+
+// Granting asks first, and the question must name what it is about.
+click('trust-toggle');
+ok('clicking trust opens the dialog', !isHidden(trustDialog));
+ok('the dialog names the document',
+   window.document.getElementById('trust-dialog-name').textContent === 'notes.md');
+ok('nothing is granted merely by asking',
+   !posted.some(m => m.kind === 'trustDocument'), JSON.stringify(posted));
+ok('the toggle stays off while the dialog is up',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// Cancel is the default action, and Esc chooses it.
+click('trust-cancel');
+ok('cancel closes the dialog', isHidden(trustDialog));
+ok('cancel grants nothing', !posted.some(m => m.kind === 'trustDocument'));
+ok('cancel leaves the toggle off', trustToggle.getAttribute('aria-pressed') === 'false');
+
+click('trust-toggle');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok('Esc closes the dialog', isHidden(trustDialog));
+ok('Esc grants nothing', !posted.some(m => m.kind === 'trustDocument'));
+ok('Esc closed the dialog without also closing the toolbar', !isHidden(findBar));
+
+// Confirming is the only path to a grant.
+click('trust-toggle');
+click('trust-confirm');
+ok('confirming closes the dialog', isHidden(trustDialog));
+ok('confirming asks the host to record trust',
+   posted.some(m => m.kind === 'trustDocument' && m.trusted === true), JSON.stringify(posted));
+ok('the toggle reads as pressed', trustToggle.getAttribute('aria-pressed') === 'true');
+
+// Withdrawing a permission is safe, so it does not ask.
+posted.length = 0;
+click('trust-toggle');
+ok('withdrawing skips the dialog', isHidden(trustDialog));
+ok('withdrawing is sent to the host',
+   posted.some(m => m.kind === 'trustDocument' && m.trusted === false), JSON.stringify(posted));
+ok('the toggle reads as unpressed again',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// The host is the authority; the page repaints from what it is told.
+c = render('# Remote\n', {}, 'light', { trusted: true });
+ok('a trusted render lights the toggle up',
+   trustToggle.getAttribute('aria-pressed') === 'true');
+c = render('# Remote\n', {}, 'light', { trusted: false });
+ok('the next document does not inherit the grant',
+   trustToggle.getAttribute('aria-pressed') === 'false');
+
+// An item with no file behind it has nothing to record a grant against.
+c = render('# Streamed\n', {}, 'light', { trustable: false, documentName: '' });
+ok('an unlocatable item cannot be trusted', trustToggle.disabled === true);
+ok('and it says why', trustToggle.title.includes('no file on disk'), trustToggle.title);
+c = render('# Located\n', {}, 'light', { trustable: true });
+ok('a real file can be trusted again', trustToggle.disabled === false);
 
 console.log(`\n${'='.repeat(46)}\n  ${pass} passed, ${fail} failed\n${'='.repeat(46)}`);
 process.exit(fail === 0 ? 0 : 1);

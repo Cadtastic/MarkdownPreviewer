@@ -21,14 +21,16 @@
 
   <ItemGroup>
     <!--
-      The Rendering and Shell projects are intentionally NOT referenced. They
-      require WebView2 and a live COM host, so covering them here would mean
-      mocking the browser — which tests the mock, not the code. Their behaviour is
-      exercised through the Harness project instead.
+      Shell is intentionally NOT referenced: it needs a live COM host, so
+      covering it here would mean mocking the shell — which tests the mock,
+      not the code. Its behaviour is exercised through the Harness project.
+      Rendering IS referenced, but only its pure pieces are tested (SVG text
+      extraction); anything that touches WebView2 still belongs to the Harness.
     -->
     <ProjectReference Include="..\..\src\MarkdownPreviewer.Domain\MarkdownPreviewer.Domain.csproj" />
     <ProjectReference Include="..\..\src\MarkdownPreviewer.Application\MarkdownPreviewer.Application.csproj" />
     <ProjectReference Include="..\..\src\MarkdownPreviewer.Infrastructure\MarkdownPreviewer.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\MarkdownPreviewer.Rendering\MarkdownPreviewer.Rendering.csproj" />
   </ItemGroup>
 
 </Project>

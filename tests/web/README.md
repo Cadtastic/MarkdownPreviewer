@@ -22,8 +22,12 @@ npm test
 | Document link routing | A link to a sibling file must reach the host as `openDocument`, not open a dead virtual-host URL. |
 | Dangerous URL schemes | `javascript:`, `vbscript:`, `file:`, non-image `data:`. |
 | Raw HTML sanitiser | On by default, so it stands between every previewed file and the DOM. |
-| Find in page | Match counting, wrap-around cycling, highlight removal, and the exclusion of invisible `<style>`/`<svg>` text. |
-| Panel visibility | Whether the find bar and contents panel are *actually* hidden — computed display, not the `hidden` property. |
+| Find in page | Match counting, wrap-around cycling, highlight removal, and the exclusion of invisible `<style>` text. |
+| Panel visibility | Whether the toolbar, options row and contents rail are *actually* hidden — computed display, not the `hidden` property. |
+| Themes | System vs named palettes: attribute stamping, sheet flipping, persistence, and that a named palette outranks the host's light/dark signal. |
+| Image search | Alt/title matching, the imageTextRequest/imageText round trip, and one box per matched image. |
+| Search options | Case, whole word and regex independently and combined, plus an invalid pattern reporting rather than throwing. |
+| Diagram search | Labels drawn inside an `<svg>` are matched, boxed by an overlay, and reachable with the cycle arrows. |
 | Table of contents | Built per render, collapse and hide states, and reshow via the host message. |
 | Host ↔ page protocol | Token echo, completion reporting, external-link routing. |
 | Theme switching | Stylesheets toggle via `media`, not the `disabled` attribute. |

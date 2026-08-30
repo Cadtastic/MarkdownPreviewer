@@ -52,8 +52,14 @@ on threads that are not an STA and pump no messages, which WebView2 cannot start
 on. Fixed in v1.1.0: the handler owns a dedicated STA thread with a message loop
 and marshals every browser call onto it.
 
-Both are fixed in the current release, so seeing either means an older build is
-still loaded. Confirm which binary is answering — the log records its full path
+A third cause of `0x8007139F` was found later: WebView2's shared-browser
+compatibility check includes the HOST EXECUTABLE's identity, so two different
+host programs (prevhost and Outlook's reading pane, say) could collide on one
+browser profile. The profile is now partitioned per host executable, which
+removes that collision outright.
+
+All of these are fixed in the current release, so seeing any of them means an
+older build is still loaded. Confirm which binary is answering — the log records its full path
 at startup — and restart Explorer with the script above, since `prevhost.exe`
 caches the DLL:
 
@@ -182,15 +188,24 @@ always the sanitised form — `<script>`, `<iframe>`, `<form>`, event handlers a
 Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name AllowRawHtml -Value 1 -Type DWord
 ```
 
-## The table of contents or find bar is missing
+## The toolbar, search, or table of contents is missing
 
-The contents panel is hidden for documents with fewer than two headings, and on
-panes narrower than 640 px where it would cover the document. If you hid it with
-its `×`, right-click the page and choose *Toggle table of contents*; the chevron
-in its header collapses it to a pill instead of hiding it. Both choices persist.
+`Ctrl+F` opens the toolbar (the right-click menu's *Find…* does too, which is
+the one to try if a host application swallows the keystroke). The contents rail
+is toggled from the toolbar's **Contents** button and is unavailable — button
+disabled — for documents with fewer than two headings; it is also dropped on
+panes narrower than 640 px, where it would cover more than it navigates. The
+toolbar's `×` (or `Esc`) closes everything at once. Open/closed choices for the
+rail and the options row persist across documents.
 
-`Ctrl+F` opens the find bar; the right-click menu has *Find…* as well, which is
-the one to try if a host application swallows the keystroke.
+## The theme selector did not change anything
+
+The selector lives in the toolbar's options row (gear icon). **System** follows
+the host's light/dark resolution — the Windows apps colour mode, or
+`FollowSystemTheme`/`FixedTheme` from the registry. The six named palettes
+carry their own lightness and ignore those settings entirely. The choice is
+stored per user in the preview's browser profile, so it survives upgrades but
+not a profile wipe.
 
 ## Large files show a truncation notice
 

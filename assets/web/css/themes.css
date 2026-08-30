@@ -1,0 +1,284 @@
+/*
+ * Theme palettes for the preview surface.
+ *
+ * Seven choices: System (follows the host's light/dark resolution, rendering
+ * with the stock GitHub palettes) plus six named palettes — three light
+ * (Paper, Arctic, Ledger) and three dark (Harbor, Midnight, Carbon).
+ *
+ * Every theme defines the same token set on the root element via
+ * [data-mdp-theme="…"], which preview.js sets. Chrome (toolbar, contents
+ * rail, notices) is styled exclusively from these tokens, so it re-themes
+ * with the document. Named palettes additionally override the CSS variables
+ * github-markdown-css exposes on .markdown-body, so the document itself —
+ * backgrounds, text, borders, links, tables — adopts the palette; System
+ * leaves those variables to the stock GitHub stylesheets.
+ *
+ * Deliberately absent: the palette source document pairs these tokens with
+ * Google-hosted fonts (Archivo, Newsreader). A preview pane must not fetch
+ * anything from the network — CSP pins font-src and style-src to the local
+ * asset host — so typography stays with the system stack.
+ */
+
+/* ---- fallback = GitHub light, so no token is ever undefined ---------------- */
+:root {
+  --ground: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --line: #d0d7de;
+  --line-soft: #d8dee4;
+  --ink: #1f2328;
+  --ink-2: #424a53;
+  --muted: #59636e;
+  --accent: #0969da;
+  --accent-soft: #ddf4ff;
+  --good: #1a7f37;
+  --good-soft: #dafbe1;
+  --warn: #9a6700;
+  --warn-soft: #fff8c5;
+  --crit: #cf222e;
+  --crit-soft: #ffebe9;
+  --shadow: 0 1px 2px rgba(17, 26, 32, 0.06), 0 8px 24px -14px rgba(17, 26, 32, 0.28);
+}
+
+/* ---- System: stock GitHub, light and dark ---------------------------------- */
+
+[data-mdp-theme="github-light"] {
+  --ground: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --line: #d0d7de;
+  --line-soft: #d8dee4;
+  --ink: #1f2328;
+  --ink-2: #424a53;
+  --muted: #59636e;
+  --accent: #0969da;
+  --accent-soft: #ddf4ff;
+  --good: #1a7f37;
+  --good-soft: #dafbe1;
+  --warn: #9a6700;
+  --warn-soft: #fff8c5;
+  --crit: #cf222e;
+  --crit-soft: #ffebe9;
+  --shadow: 0 1px 2px rgba(17, 26, 32, 0.06), 0 8px 24px -14px rgba(17, 26, 32, 0.28);
+}
+
+[data-mdp-theme="github-dark"] {
+  --ground: #010409;
+  --surface: #0d1117;
+  --surface-2: #161b22;
+  --line: #30363d;
+  --line-soft: #21262d;
+  --ink: #e6edf3;
+  --ink-2: #b1bac4;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --accent-soft: #121d2f;
+  --good: #3fb950;
+  --good-soft: #12261e;
+  --warn: #d29922;
+  --warn-soft: #272115;
+  --crit: #f85149;
+  --crit-soft: #25171c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -14px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- named light palettes --------------------------------------------------- */
+
+[data-mdp-theme="paper"] {
+  --ground: #e9eef1;
+  --surface: #ffffff;
+  --surface-2: #f3f6f8;
+  --line: #cdd8de;
+  --line-soft: #e0e8ec;
+  --ink: #111a20;
+  --ink-2: #3d4d57;
+  --muted: #66787f;
+  --accent: #0d6f79;
+  --accent-soft: #d3e9eb;
+  --good: #1b6b46;
+  --good-soft: #d5e9de;
+  --warn: #8a6100;
+  --warn-soft: #f2e6c4;
+  --crit: #a01f36;
+  --crit-soft: #f4d8dd;
+  --shadow: 0 1px 2px rgba(17, 26, 32, 0.06), 0 8px 24px -14px rgba(17, 26, 32, 0.28);
+}
+
+[data-mdp-theme="arctic"] {
+  --ground: #dbe3f0;
+  --surface: #f5f8fd;
+  --surface-2: #e7edf7;
+  --line: #b7c6dd;
+  --line-soft: #cfdaeb;
+  --ink: #0e1a2e;
+  --ink-2: #364a6b;
+  --muted: #607393;
+  --accent: #2f4fd0;
+  --accent-soft: #d3dcf8;
+  --good: #156b46;
+  --good-soft: #cfe6da;
+  --warn: #7f5c00;
+  --warn-soft: #eee0bb;
+  --crit: #a01f36;
+  --crit-soft: #f2d4dc;
+  --shadow: 0 1px 2px rgba(14, 26, 46, 0.08), 0 8px 24px -14px rgba(14, 26, 46, 0.32);
+}
+
+[data-mdp-theme="ledger"] {
+  --ground: #ece7db;
+  --surface: #faf7ef;
+  --surface-2: #f1ecdf;
+  --line: #d3cbb8;
+  --line-soft: #e2dccc;
+  --ink: #241f14;
+  --ink-2: #4c4636;
+  --muted: #77705c;
+  --accent: #37623c;
+  --accent-soft: #d9e6d4;
+  --good: #1b6b46;
+  --good-soft: #d3e5d6;
+  --warn: #8a5f00;
+  --warn-soft: #efe3c0;
+  --crit: #9c2f26;
+  --crit-soft: #f1d9d3;
+  --shadow: 0 1px 2px rgba(36, 31, 20, 0.08), 0 8px 24px -14px rgba(36, 31, 20, 0.3);
+}
+
+/* ---- named dark palettes ----------------------------------------------------- */
+
+[data-mdp-theme="harbor"] {
+  --ground: #0d1317;
+  --surface: #151d23;
+  --surface-2: #1b252c;
+  --line: #2c3a43;
+  --line-soft: #232f37;
+  --ink: #e2eaee;
+  --ink-2: #aab9c2;
+  --muted: #8195a0;
+  --accent: #3fbfc9;
+  --accent-soft: #123037;
+  --good: #5cc08d;
+  --good-soft: #11291f;
+  --warn: #d9a629;
+  --warn-soft: #2b2211;
+  --crit: #e8697f;
+  --crit-soft: #2e1319;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -14px rgba(0, 0, 0, 0.7);
+}
+
+[data-mdp-theme="midnight"] {
+  --ground: #0a1120;
+  --surface: #111a2e;
+  --surface-2: #172136;
+  --line: #2a3752;
+  --line-soft: #202b42;
+  --ink: #e3e9f4;
+  --ink-2: #a9b6cc;
+  --muted: #7e8ca6;
+  --accent: #7aa2f7;
+  --accent-soft: #16233f;
+  --good: #56bd8a;
+  --good-soft: #10281d;
+  --warn: #d9a63f;
+  --warn-soft: #2b2310;
+  --crit: #ee7085;
+  --crit-soft: #331520;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -14px rgba(0, 0, 0, 0.7);
+}
+
+[data-mdp-theme="carbon"] {
+  --ground: #121212;
+  --surface: #1b1b1b;
+  --surface-2: #232323;
+  --line: #383838;
+  --line-soft: #2b2b2b;
+  --ink: #ececec;
+  --ink-2: #b4b4b4;
+  --muted: #8b8b8b;
+  --accent: #e0844a;
+  --accent-soft: #33210f;
+  --good: #66bd7d;
+  --good-soft: #17281b;
+  --warn: #d3a52f;
+  --warn-soft: #2a230f;
+  --crit: #e2687a;
+  --crit-soft: #2d151a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -14px rgba(0, 0, 0, 0.7);
+}
+
+/*
+ * Named palettes restyle the document itself. preview.js stamps
+ * [data-mdp-named] on the root whenever one is active.
+ *
+ * Two mechanisms, both needed. The variables cover everything that consumes
+ * them (this project's own chrome and any var()-based rule). But the vendored
+ * github-markdown sheets are FLATTENED builds - the colours are hard-coded,
+ * not var()-driven - so the elements they paint are overridden directly
+ * below. Syntax highlighting inside code fences keeps the GitHub light/dark
+ * colour set matching the palette's lightness: highlight.js hard-codes its
+ * colours too, and re-deriving a syntax palette per theme is not worth the
+ * drift. Code block backgrounds do re-theme.
+ */
+[data-mdp-named] .markdown-body {
+  --bgColor-default: var(--surface);
+  --bgColor-muted: var(--surface-2);
+  --bgColor-neutral-muted: var(--surface-2);
+  --fgColor-default: var(--ink);
+  --fgColor-muted: var(--muted);
+  --borderColor-default: var(--line);
+  --borderColor-muted: var(--line-soft);
+  --borderColor-accent-emphasis: var(--accent);
+  --fgColor-accent: var(--accent);
+  --bgColor-accent-muted: var(--accent-soft);
+  --fgColor-success: var(--good);
+  --bgColor-success-muted: var(--good-soft);
+  --fgColor-attention: var(--warn);
+  --bgColor-attention-muted: var(--warn-soft);
+  --fgColor-danger: var(--crit);
+  --bgColor-danger-muted: var(--crit-soft);
+  color: var(--ink);
+  background-color: var(--surface);
+}
+
+[data-mdp-named] .markdown-body a {
+  color: var(--accent);
+}
+
+[data-mdp-named] .markdown-body h1,
+[data-mdp-named] .markdown-body h2 {
+  border-bottom-color: var(--line-soft);
+}
+
+[data-mdp-named] .markdown-body hr {
+  background-color: var(--line);
+}
+
+[data-mdp-named] .markdown-body blockquote {
+  color: var(--muted);
+  border-left-color: var(--line);
+}
+
+[data-mdp-named] .markdown-body table th,
+[data-mdp-named] .markdown-body table td {
+  border-color: var(--line);
+}
+[data-mdp-named] .markdown-body table tr {
+  background-color: var(--surface);
+  border-top-color: var(--line-soft);
+}
+[data-mdp-named] .markdown-body table tr:nth-child(2n) {
+  background-color: var(--surface-2);
+}
+
+[data-mdp-named] .markdown-body pre,
+[data-mdp-named] .markdown-body .highlight pre {
+  background-color: var(--surface-2);
+}
+[data-mdp-named] .markdown-body code:not(pre code),
+[data-mdp-named] .markdown-body tt {
+  background-color: var(--surface-2);
+}
+
+[data-mdp-named] .markdown-body img {
+  background-color: transparent;
+}

@@ -23,6 +23,7 @@ public sealed class InstallDirectoryAssetCatalog : IWebAssetCatalog
         Path.Combine("css", "github.min.css"),
         Path.Combine("css", "github-dark.min.css"),
         Path.Combine("css", "preview.css"),
+        Path.Combine("css", "themes.css"),
         Path.Combine("js", "markdown-it.min.js"),
         Path.Combine("js", "markdownItAnchor.umd.js"),
         Path.Combine("js", "highlight.min.js"),

@@ -97,7 +97,8 @@ internal sealed class HarnessWindow : Form
             _statusText.Text = $"Assets missing under {assets.WebRootPath}: {string.Join(", ", assets.MissingFiles)}";
         }
 
-        _surface = new WebView2PreviewSurface(_surfaceHost, assets, new ShellExecuteLinkLauncher(_log), _log);
+        _surface = new WebView2PreviewSurface(
+            _surfaceHost, assets, new ShellExecuteLinkLauncher(_log), new RegistryTrustedDocumentStore(_log), _log);
         _session = new PreviewSession(_surface, new HarnessSettingsProvider(_themeSelector), new SystemThemeProvider(_log), _log);
 
         await _session.PreviewAsync(new EmptyReader(), CancellationToken.None).ConfigureAwait(true);
