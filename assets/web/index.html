@@ -100,6 +100,26 @@
       <label title="Combines with the others. With whole word the pattern is wrapped as \b(?:pattern)\b, so one starting or ending with a non-word character will not match."><input type="checkbox" id="find-regex" /> Regular expression</label>
       <span class="mdp-toolbar-spacer"></span>
 
+      <!-- Where a click on a local link goes. Two modes, so the glyph states
+           the current behaviour rather than lighting up: a crosshair while
+           links reveal the file in Explorer (the default), an arrow leaving a
+           box while they open in the default app. preview.js swaps the glyph
+           and the tooltip off aria-pressed. -->
+      <button id="link-mode" class="mdp-toolbar-button mdp-linkmode-toggle" type="button"
+              aria-pressed="false" title="Local links reveal the file in File Explorer">
+        <svg class="mdp-icon mdp-lm-app" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6" />
+          <path d="M11 13l9 -9" />
+          <path d="M15 4h5v5" />
+        </svg>
+        <svg class="mdp-icon mdp-lm-locate" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+          <path d="M4 12a8 8 0 1 0 16 0a8 8 0 0 0 -16 0" />
+          <path d="M12 2v2M12 20v2M20 12h2M2 12h2" />
+        </svg>
+        <span class="mdp-sr-only">Where local links open</span>
+      </button>
+
       <!-- Off by default, and it stays off until the user answers a dialog.
            The slash is part of the glyph rather than a separate "off" icon, so
            the two states are the same shape and read as one switch. -->

@@ -56,6 +56,7 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
     private readonly Control _host;
     private readonly IWebAssetCatalog _assets;
     private readonly IExternalLinkLauncher _launcher;
+    private readonly IDocumentRevealer _revealer;
     private readonly ITrustedDocumentStore _trust;
     private readonly IDiagnosticLog _log;
 
@@ -94,12 +95,14 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
         Control host,
         IWebAssetCatalog assets,
         IExternalLinkLauncher launcher,
+        IDocumentRevealer revealer,
         ITrustedDocumentStore trust,
         IDiagnosticLog log)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+        _revealer = revealer ?? throw new ArgumentNullException(nameof(revealer));
         _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
@@ -516,7 +519,12 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
         string root = Path.GetFullPath(directory + Path.DirectorySeparatorChar);
         string candidate = Path.GetFullPath(Path.Combine(root, relative));
-        if (!candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(candidate))
+
+        // Directories qualify too: a "docs/" link navigates Explorer into the
+        // folder. The image-serving caller is unaffected — opening a directory
+        // as a FileStream fails into its existing 404 path.
+        if (!candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase) ||
+            (!File.Exists(candidate) && !Directory.Exists(candidate)))
         {
             return false;
         }
@@ -759,14 +767,29 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
 
             case "openDocument":
                 // A link to a sibling of the previewed document. Resolve it back
-                // to a real file, confined to the document's folder; the
-                // launcher applies its own document-type allowlist on top.
+                // to a real file, confined to the document's folder, then go the
+                // way the reader chose on the toolbar:
+                //
+                //   navigate  Explorer is steered to the file and selects it, so
+                //             the preview follows. Selecting executes nothing,
+                //             so any file that exists qualifies.
+                //   (else)    the file is launched in its default application.
+                //             The launcher applies its inert-type allowlist on
+                //             top — a document must not be one click away from
+                //             running a script it shipped alongside itself.
                 if (message.Url is { Length: > 0 } documentUrl &&
                     Uri.TryCreate(documentUrl, UriKind.Absolute, out Uri? documentUri) &&
                     string.Equals(documentUri.Host, DocumentHost, StringComparison.OrdinalIgnoreCase) &&
                     TryMapDocumentUrl(documentUri, out string linkedPath))
                 {
-                    _launcher.LaunchDocument(linkedPath);
+                    if (string.Equals(message.Mode, "navigate", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _revealer.Reveal(linkedPath, _host.Handle, _mappedDocumentDirectory);
+                    }
+                    else
+                    {
+                        _launcher.LaunchDocument(linkedPath);
+                    }
                 }
                 else
                 {

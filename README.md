@@ -44,8 +44,9 @@ does, but integrated where you already are.
   file itself on the clipboard for pasting into mail or chat
 - **Relative images resolve** — served from the document's own folder over a
   virtual host, never `file://`
-- **Relative links open the real file** — click `docs/architecture.md` in a
-  README and it opens in that type's default app (inert document types only)
+- **Local links turn the page** — click `docs/architecture.md` in a README and
+  Explorer navigates to that file and selects it, so the preview follows the
+  link; a toolbar switch opens links in their default app instead
 - **Fast where it counts** — Mermaid (3.5 MB) and MathJax (2.1 MB) are injected
   only when a document actually uses them, so arrow-keying through a folder of
   plain READMEs stays instant
@@ -218,6 +219,29 @@ anything reaches the DOM, a sanitiser strips `<script>`, `<iframe>`, `<form>`,
 every `on*` handler, and any `javascript:`/`file:` URL — and CSP forbids inline
 script and network access independently. Set it to 0 for strictly-Markdown
 rendering.
+
+### Where local links open
+
+A link to a file next to the document — `CHANGELOG.md`, `docs/architecture.md` —
+can go one of two ways, chosen with the crosshair/arrow switch in the toolbar's
+options row and remembered per user.
+
+**Reveal in Explorer** (the default) navigates the Explorer tab hosting the
+preview to the file's folder and selects the file, which makes it the new
+preview. Reading a set of linked documents becomes page-turning rather than a
+trip through another program, and the back button still works, because it is
+ordinary Explorer navigation. Any file that exists qualifies, extension or not:
+selecting a file runs nothing.
+
+**Open in the default app** is the older behaviour, and keeps its allowlist of
+inert document types. That asymmetry is deliberate — a previewed document you
+did not write must not be one click away from launching a `.bat` it shipped
+beside itself, whereas merely selecting that file in Explorer is harmless.
+
+A link to a folder navigates into it. A link to a file that is not there does
+nothing. When the preview is not hosted by Explorer at all — the dev harness,
+Outlook's reading pane, a document inside a `.zip` — a folder window opens with
+the file selected instead.
 
 ### Trusting a single document
 

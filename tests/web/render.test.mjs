@@ -304,6 +304,35 @@ ok('relative link rewritten to the doc host',
 ok('marked as a document link', docAnchor?.getAttribute('data-mdp-doclink') === '1');
 ok('not marked external', docAnchor?.getAttribute('data-mdp-external') !== '1');
 
+console.log('\n== where a local link opens ==');
+// Two modes: reveal the file in Explorer (default) or open it in the default
+// app. The page only declares the reader's choice per click; the host decides
+// what happens to the path.
+const linkModeToggle = window.document.getElementById('link-mode');
+ok('defaults to revealing in Explorer', linkModeToggle.getAttribute('aria-pressed') === 'false');
+
+posted.length = 0;
+docAnchor.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+ok('a link click declares navigate mode',
+   posted.some(m => m.kind === 'openDocument' && m.mode === 'navigate'),
+   JSON.stringify(posted));
+
+linkModeToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling flips to app mode', linkModeToggle.getAttribute('aria-pressed') === 'true');
+ok('the choice is persisted', window.localStorage.getItem('mdp.linkMode') === 'app');
+ok('the tooltip states the current behaviour',
+   linkModeToggle.title.startsWith('Local links open in their default app'), linkModeToggle.title);
+
+posted.length = 0;
+docAnchor.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+ok('a link click now declares app mode',
+   posted.some(m => m.kind === 'openDocument' && m.mode === 'app'),
+   JSON.stringify(posted));
+
+linkModeToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('toggling back returns to navigate', linkModeToggle.getAttribute('aria-pressed') === 'false' &&
+   window.localStorage.getItem('mdp.linkMode') === 'navigate');
+
 posted.length = 0;
 docAnchor.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 ok('click routed to the host as openDocument',

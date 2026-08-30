@@ -114,6 +114,13 @@ internal sealed class PageToHostMessage
     [JsonPropertyName("urls")]        public string[]? Urls { get; init; }
 
     /// <summary>
+    /// For kind "openDocument": what the reader wants done with the link —
+    /// "navigate" reveals the file in Explorer, anything else (or nothing, from
+    /// an older page) launches it in its default application.
+    /// </summary>
+    [JsonPropertyName("mode")]        public string? Mode { get; init; }
+
+    /// <summary>
     /// For kind "trustDocument": the state the user just chose. The page has
     /// already shown its confirmation dialog by the time this arrives; the host
     /// records the grant and re-renders so the newly permitted images load.
