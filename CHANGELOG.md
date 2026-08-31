@@ -34,9 +34,9 @@ turns the page instead of leaving the pane.
   with its keys picked out by weight rather than a second colour. A fence and
   its closing partner match, language tag included, and the body between them
   is handed to highlight.js under the language the fence declares — so a
-  ```csharp block reads as C#, not as Markdown. Table pipes and the alignment
-  row share one colour and the heading row is bold. Mathematics is coloured,
-  display and inline, delimiters and all.
+  ` ```csharp ` block reads as C#, not as Markdown. Table pipes and the
+  alignment row share one colour and the heading row is bold. Mathematics is
+  coloured, display and inline, delimiters and all.
 
   The dark palettes colour the source straight from the chrome tokens, which
   already glow against a dark surface; the light palettes get their own
