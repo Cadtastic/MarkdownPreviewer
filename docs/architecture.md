@@ -5,23 +5,29 @@ handful of constraints that are imposed on us rather than chosen.
 
 ## The shape of the thing
 
-```
-                    ┌──────────────────────────────────────┐
-  explorer.exe ────►│ prevhost.exe  (COM surrogate, STA)   │
-                    │                                      │
-                    │  MarkdownPreviewHandler  (COM class) │  ← Presentation
-                    │            │                         │
-                    │            ▼                         │
-                    │  PreviewSession       (use case)     │  ← Application
-                    │       │        │                     │
-                    │       ▼        ▼                     │
-                    │  Readers    WebView2PreviewSurface   │  ← Infrastructure
-                    │  Registry        │                   │
-                    │  Logging         ▼                   │
-                    │            msedgewebview2.exe        │
-                    │             └─ index.html            │
-                    │                └─ preview.js         │
-                    └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    explorer["explorer.exe"]
+
+    subgraph host["prevhost.exe — COM surrogate, STA thread"]
+        handler["MarkdownPreviewHandler<br/>COM class — Presentation"]
+        session["PreviewSession<br/>use case — Application"]
+        io["Readers · Registry · Logging<br/>Infrastructure"]
+        surface["WebView2PreviewSurface<br/>Infrastructure"]
+    end
+
+    subgraph browser["msedgewebview2.exe"]
+        page["index.html"]
+        js["preview.js"]
+    end
+
+    explorer -->|IPreviewHandler| handler
+    handler --> session
+    session -->|read| io
+    session -->|render| surface
+    surface <-->|postMessage| page
+    page --> js
+    surface -.->|"checkbox write, trust, reveal"| io
 ```
 
 Dependencies point inward. `Domain` and `Application` target plain `net8.0` rather
@@ -40,8 +46,8 @@ The payoff is concrete: `PreviewSessionTests` exercises the whole orchestration 
 cancellation on selection change, settings fallback, failure conversion — with no
 COM, no browser, and no running Explorer.
 
-One thing that diagram does not show, and should: `PreviewSession` orchestrates
-only *read → theme → render*. The interactive paths added since — the checkbox
+The dashed edge is the part worth dwelling on. `PreviewSession` orchestrates
+only *read → theme → render*; the interactive paths added since — the checkbox
 write, the trust grant, revealing a linked file in Explorer — do not pass
 through it at all. They run from `WebView2PreviewSurface`'s message handler
 straight to Infrastructure services injected into its constructor. The
