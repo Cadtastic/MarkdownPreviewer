@@ -822,9 +822,13 @@ public sealed class WebView2PreviewSurface : IPreviewSurface
                 // character; on success the in-memory document is refreshed so
                 // a later redraw (theme flip, trust change) shows the new state
                 // instead of resurrecting the old one. On refusal the document
-                // is re-rendered from what is actually on disk, which snaps the
+                // is re-rendered from the text we last read, which snaps the
                 // checkbox back — silently, as designed, with the reason in the
-                // log.
+                // log. Note that is the last-read text, not a fresh disk read:
+                // when the refusal reason IS that the file changed underneath,
+                // the pane keeps showing the stale document until the next
+                // selection. The write is still correctly refused; only the
+                // redraw is behind.
                 if (_lastRequest is { } editTarget &&
                     editTarget.Document.Location is { HasDirectory: true, FullPath: { } editPath } &&
                     !editTarget.Document.WasTruncated &&

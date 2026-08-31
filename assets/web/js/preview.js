@@ -988,10 +988,14 @@
    * source view tokenises the file itself, line by line, and hands the body of
    * each fenced block to highlight.js under the language the fence declares.
    *
-   * Every colour is one of the palette tokens the rest of the chrome already
-   * uses. That is deliberate: those tokens are defined per theme against that
-   * theme's own surfaces, so source highlighting is legible in all seven
-   * without a single new colour, and a theme added later inherits it.
+   * Colours come from the chrome's own palette tokens, which are defined per
+   * theme against that theme's surfaces — so the dark palettes need nothing of
+   * their own and a dark theme added later inherits the whole scheme. The
+   * light palettes are the exception: against a near-white ground the chrome
+   * tokens read but do not pop, so themes.css gives them deeper, fully
+   * saturated hues of the same families in --src-*. Every hue there was picked
+   * as the most saturated candidate still clearing 4.6:1 on every light
+   * ground, inline-code and maths chips included.
    */
 
   /* Beyond this, tokenising costs more than the colour is worth. */

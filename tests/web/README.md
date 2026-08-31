@@ -29,12 +29,17 @@ npm test
 | Search options | Case, whole word and regex independently and combined, plus an invalid pattern reporting rather than throwing. |
 | Diagram search | Labels drawn inside an `<svg>` are matched, boxed by an overlay, and reachable with the cycle arrows. |
 | Table of contents | Built per render, collapse and hide states, and reshow via the host message. |
+| Source view | The raw file shown verbatim, front matter included; the page's own Markdown tokeniser; the copy button appearing only with the source and staying outside the searchable document; and the parser-failure fallback that shows source rather than a blank pane. |
+| Task checkbox editing | Which source line a click names — the part that is a *write* — including front-matter offset and a `- [ ]` inside a fenced block that must neither become a checkbox nor shift the real ones. |
+| Per-document trust | The confirm dialog's cancel/Esc/confirm paths, that a grant does not follow the reader to the next document, and that a document with no remote images disables the toggle instead of promising a grant it cannot make. |
+| Select All | Chrome is excluded from selection and the search field opts back in, so Ctrl+A yields the document and not the theme name. |
+| Search state per document | A query typed against one file is cleared by moving to another, and kept when the same document is merely redrawn. |
 | Host ↔ page protocol | Token echo, completion reporting, external-link routing. |
 | Theme switching | Stylesheets toggle via `media`, not the `disabled` attribute. |
 | Lazy asset loading | Mermaid is 3.5 MB and MathJax 2.1 MB. Loading either unnecessarily is a visible regression. |
 | Graceful degradation | A failed asset load must still complete the render, or the host waits out its 30 s timeout. |
 
-## Three things the tests exist to prevent recurring
+## Four things the tests exist to prevent recurring
 
 **The token echo bug.** The page must reply with the token the *host* sent, not a
 counter of its own. An earlier version kept a page-local sequence; the two

@@ -5,11 +5,11 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] — 2026-08-30
+## [1.4.0] — 2026-08-31
 
-The toolbar is there when you arrive, a document you wrote yourself can be let
-onto the network, and a link to the file next door turns the page instead of
-leaving the pane.
+The toolbar is there when you arrive, the raw file is one click away, a document
+you wrote yourself can be let onto the network, and a link to the file next door
+turns the page instead of leaving the pane.
 
 ### Added
 
@@ -96,8 +96,8 @@ leaving the pane.
   Anything unexpected refuses rather than guesses: a file whose bytes would not
   survive the round trip, a line that is not a task, a marker already in the
   requested state (the file changed under the preview), a read-only or vanished
-  file. A refusal re-renders from what is actually on disk, so the checkbox
-  snaps back to the truth instead of showing a change that never landed. The
+  file. A refusal draws the document again from the text the preview last read,
+  so the checkbox snaps back instead of showing a change that never landed. The
   toggle disables itself, and says why, for documents with no file behind them
   and for truncated ones.
 

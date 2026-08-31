@@ -40,6 +40,18 @@ The payoff is concrete: `PreviewSessionTests` exercises the whole orchestration 
 cancellation on selection change, settings fallback, failure conversion — with no
 COM, no browser, and no running Explorer.
 
+One thing that diagram does not show, and should: `PreviewSession` orchestrates
+only *read → theme → render*. The interactive paths added since — the checkbox
+write, the trust grant, revealing a linked file in Explorer — do not pass
+through it at all. They run from `WebView2PreviewSurface`'s message handler
+straight to Infrastructure services injected into its constructor. The
+Dependency Rule still holds (Rendering depends inward on Application's
+abstractions, never on Infrastructure's types), but the use-case layer is no
+longer the single place where the order of operations lives, and a reader
+looking for "what happens when the user clicks a checkbox" will not find it in
+`Application`. If a fourth interactive path appears, that is the moment to move
+them behind use cases rather than the moment after.
+
 ## Constraints we did not choose
 
 ### Why the .NET runtime is a hard dependency
@@ -286,6 +298,209 @@ from outside it. OCR for raster images was considered and rejected: the
 tesseract-class engines cost more megabytes than every other asset combined,
 seconds per image, and a CSP hole, for mediocre accuracy on UI screenshots.
 
+### The source view is a second renderer, and the failure path for the first
+
+Showing the raw file is not "skip the parser": it is a separate paint of the
+same message. `paintSource` puts the text in through `textContent` — never
+`innerHTML` — so a file's own angle brackets can never become markup on the way
+in, and highlighting is layered on afterwards as spans. That ordering makes the
+colouring a nicety rather than a trust boundary: a tokeniser bug falls back to
+`pre.textContent = source` and shows a correct, plain document.
+
+That property is what lets the source view double as the parser's failure path.
+If `markdown-it` itself throws — a damaged install, a corrupt asset — the render
+paints the source, says why in a notice above it, and reports `failed` to the
+host **directly** rather than through `fail()`, because `fail()` blanks the pane
+and a blank pane is the one outcome this path exists to avoid.
+
+The highlighter is the previewer's own rather than highlight.js's Markdown
+grammar, which answers none of the questions a reader of raw Markdown has: it
+paints front matter as several unrelated things, cannot bold a key or a table
+heading, separates a fence from the language it names, and shows the inside of a
+` ```csharp ` block as Markdown rather than as C#. Ours tokenises line by line
+and hands each fence body to highlight.js under the language the fence declares.
+Highlighting stops above 300,000 characters, where tokenising costs more than
+the colour is worth.
+
+Two placement decisions look cosmetic and are not:
+
+- **The copy button lives outside `#content`.** Inside it, the in-page search
+  would match its caption in the reader's own file. For the same reason its
+  "Copied to clipboard" confirmation is a child of the button, not the document.
+- **Chrome is `user-select: none`.** Ctrl+A and the context menu's Select All
+  must yield the Markdown and not the theme name, the button captions or the
+  tooltip text. The search field opts back in, since text typed there has to
+  stay selectable.
+
+Source view is remembered for every document rather than per file — someone
+checking raw Markdown is usually checking several — while the controls that mean
+nothing against plain text (contents, checkbox editing, trust) disable
+themselves and name source view as the reason, rather than blaming the document.
+
+### The one write path: a single character, or nothing
+
+Checkbox editing is the only thing in this program that writes to a previewed
+file, and `MarkdownTaskListEditor` is built so that the narrowness is structural
+rather than a promise. Every click starts from `File.ReadAllBytes` — **the
+document is never reconstructed from the rendered page**, because the page holds
+sanitised HTML derived from the file, not the file.
+
+The step that makes the rest safe is the round trip. `MarkdownTextDecoder` has
+two decoders on purpose: `Decode` normalises CRLF and CR to LF for rendering and
+is deliberately *not* reversible, while `DecodeForEditing` preserves everything
+so that it is. The editor then asserts
+`encoding.GetBytes(text) == original[preambleLength..]` before touching
+anything. Without it, a file containing an invalid byte sequence would decode to
+U+FFFD and re-encode as replacement bytes — corrupting content nowhere near the
+checkbox the reader clicked. The BOM is held out of that comparison and
+re-attached verbatim.
+
+Four conditions refuse the write outright, and the third is the one that reads
+backwards until you see it:
+
+1. The round trip does not reproduce the original bytes.
+2. The line index does not exist, or the line is not a GFM task marker.
+3. **The marker is already in the state being asked for.** The page sends the
+   state it wants, so agreement means the file changed under the preview.
+4. The file is locked, read-only or gone (the catch-all).
+
+The edit is one character — `x` or a space, never an empty box — and lands via a
+temp file in the *same directory* (so `File.Replace` stays on one volume) with no
+backup file left behind.
+
+The refusal path has a wrinkle worth knowing before trusting it too far: it
+re-renders `_lastRequest`, the text the preview last read, **not** a fresh read
+from disk. For a wrong line or a failed round trip that text is still accurate
+and the checkbox snaps back correctly. In the file-changed-underneath case it
+snaps back to the stale text, so the pane stays behind until the next selection.
+The write is still correctly refused; only the redraw is.
+
+Positions are resolved by source line rather than by counting checkboxes, which
+is what keeps a `- [ ] like this` inside a fenced block from both becoming a
+checkbox and shifting the real ones below it. That makes line numbering a
+contract spanning both languages — the page adds back the front-matter lines the
+parser never saw, and the host scans un-normalised text while counting CRLF as
+one terminator so the indices agree. Both halves are pinned by tests, one in
+`MarkdownTaskListEditorTests` and one in `tests/web/render.test.mjs`, so drift on
+either side fails a suite rather than corrupting a file.
+
+### Trust is per document, and the host is the gate
+
+Two registry lists under `HKCU\Software\MarkdownPreviewer` — `TrustedDocuments`
+and `TaskEditDocuments` — record per-document choices, one value per full path.
+Both are **HKCU-only with no machine-wide counterpart**, because each is a
+personal judgement about a specific file rather than something an administrator
+grants on a user's behalf. Paths are stored readable rather than hashed so the
+lists can be inspected and revoked with regedit alone, and withdrawal *deletes*
+the value rather than writing `0`, keeping each key a list of documents that
+opted in.
+
+`DocumentPathKey` guards both. It canonicalises, so one file cannot own two
+settings under two spellings, and it **rejects an unrooted path before
+canonicalising** — otherwise `Path.GetFullPath` would cheerfully root the bare
+display name a stream-fed item carries (`notes.md`) against the current
+directory, and one grant would stand for every file with that name.
+
+The enforcement point for trust is `OnWebResourceRequested`, and its shape is
+the inverse of what the CSP suggests:
+
+```csharp
+if (!_documentTrusted && _lastRequest?.Settings.AllowRemoteImages != true)
+    e.Response = environment.CreateWebResourceResponse(
+        null, 403, "External resources are blocked for this document", string.Empty);
+```
+
+- The page's CSP `img-src` is **deliberately broad** so that this handler, not
+  the CSP, is the privacy gate. The filter is registered for the Image context
+  only; script, style, font and XHR contexts never arrive here because CSP
+  refuses them outright and independently.
+- The refusal is a synthesised 403 with no body rather than a cancellation, so
+  the page draws a placeholder instead of hanging.
+- It **fails closed on a null `_lastRequest`**: `?.` makes the comparison `true`
+  when there is no request, so a cleared surface refuses everything.
+
+Trust is re-read per render rather than cached across selections, since Explorer
+reuses one surface for every file and the previous document's grant must not
+carry over. The page's own confirmation dialog runs *before* the host hears
+anything: `trustDocument` is the recorded result, not a request for permission.
+
+### Following a link means steering Explorer, not launching a program
+
+Both link modes share one validation — absolute URL, `doc.mdpreview.invalid`
+host, and a path that `TryMapDocumentUrl` confines under the current document's
+folder — and then diverge deliberately:
+
+| | Reveal in Explorer (default) | Open in default app |
+| --- | --- | --- |
+| File types | Any file that exists | An allowlist of inert formats |
+| Why | Selecting a file executes nothing | A document must not be one click from running a `.bat` it shipped beside itself |
+
+Finding the tab to steer is the interesting part. `ShellWindowsDocumentRevealer`
+enumerates `Shell.Application`'s `Windows()` collection — late-bound through
+reflection, the same calls a PowerShell one-liner would make, so there is no
+interop assembly to ship — and matches on **two facts together**: the entry's
+root HWND must equal our own (via `GetAncestor(…, GA_ROOT)`), and its
+`LocationURL` must resolve to the folder being previewed. Neither alone is
+enough, and the reason is Windows 11: **every tab of a window shares the same
+root HWND**, so the HWND ties the entry to the window and only the folder ties
+it to the specific tab.
+
+Three behaviours follow from the same insight that Explorer is being *steered*
+rather than queried:
+
+- **`Reveal` runs on a background STA thread and returns immediately.** Changing
+  Explorer's selection is the whole point of the call, and the instant it lands
+  Explorer tears down the preview handler whose click started it. The thread is
+  a background one so it cannot keep `prevhost.exe` alive by itself.
+- **A target already in the shown folder skips navigation entirely** and only
+  moves the selection — the README-links-to-a-sibling case, which is most of
+  them.
+- **Selection is retried and read back.** The view keeps initialising for a
+  moment after `LocationURL` already reports the new folder, and a `SelectItem`
+  in that window is silently ignored.
+
+When no tab hosts the preview — the dev harness, Outlook's reading pane, a
+document inside a `.zip`, or any virtual view whose `LocationURL` is not a file
+path — it falls back to `SHOpenFolderAndSelectItems`, which opens a folder
+window with the item selected. That fallback is *not* used when navigation
+succeeded but selection did not: opening a second window at that point would be
+worse than the miss.
+
+### The host ↔ page protocol
+
+One `postMessage` channel, JSON, camelCase, serialised through a
+source-generated context (reflection-based serialisation would cost startup time
+on a path that runs on every arrow-key press, and would rule out a NativeAOT
+build later).
+
+| Host → page | Page → host |
+| --- | --- |
+| `render`, `theme`, `imageText`, `find`, `toc` | `ready`, `rendered`, `failed`, `openExternal`, `openDocument`, `imageTextRequest`, `setTaskEdit`, `toggleTask`, `trustDocument`, `rerenderRequested`, `scriptError` |
+
+Unknown kinds are logged and dropped rather than throwing. Two fields on the
+`render` message carry more weight than their size suggests:
+
+- **`token`** is the render ordering described below.
+- **`documentGeneration`** increments only when the document changes *identity*,
+  and repeats its previous value on a redraw (a theme flip, a trust change, a
+  post-toggle refresh). Since both arrive as a `render` message, this is the
+  page's only way to tell "the reader moved on" from "we drew this again" — and
+  it is what lets a search query survive a theme change but not survive moving
+  to the next file.
+
+Capability and choice are also sent as separate fields — `taskEditable` beside
+`taskEditOn`, `trustable` beside `trusted` — so the page can disable a control
+and say *why* rather than showing a switch that silently forgets.
+
+**Every inbound message is checked against the page's own URL, comparing
+everything up to the query and forgiving only the fragment.** That precision is
+scar tissue: WebView2 reports the fragment in `Source`, a reader clicking any
+heading anchor or contents-rail entry adds one, and an exact-match comparison
+then rejected everything the page said for the rest of its life. The trust
+toggle did nothing and every later render died on its 30-second timeout. It
+presented as "trust works in some folders and not others", because what actually
+predicted it was whether the reader had used the table of contents yet.
+
 ### Render ordering by host token
 
 Explorer changes selection faster than a document with a diagram can render. Every
@@ -317,6 +532,8 @@ entry, an empty rectangle. Each of these is turned into something readable:
 | Broken relative image | A dashed placeholder showing the path, not a 0×0 box |
 | Mermaid or MathJax fails | The diagram source as a code block, plus a warning bar |
 | Bad diagram syntax | That diagram falls back to source; the others still render |
+| The Markdown parser cannot run | The raw file, in the source view, with the parse error above it — never a blank pane |
+| A checkbox write is refused | The document is drawn again from the last-read text, so the box snaps back rather than showing a change that never landed |
 | Browser process crash | "Markdown preview stopped unexpectedly. Select the file again." — and the next selection genuinely rebuilds it |
 | Stale browser environment | Retried once with a fresh environment before any message is shown |
 | Registry misconfiguration | `Test-MarkdownPreviewHandler.ps1` names the specific key |
