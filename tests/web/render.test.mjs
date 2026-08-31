@@ -780,6 +780,78 @@ ok('toggling off restores the rendered document',
 ok('and the choice is persisted', window.localStorage.getItem('mdp.viewSource') === '0');
 window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
+console.log('\n== copying the source ==');
+// The copy button rides with source view: hidden against the rendered
+// document, fixed at the top right of the raw one, and it copies the file's
+// text - not the highlighted DOM.
+const copyBtn = window.document.getElementById('copy-source');
+const copyDone = window.document.getElementById('copy-source-done');
+const srcToggle2 = window.document.getElementById('view-source');
+
+const copyCalls = [];
+Object.defineProperty(window.navigator, 'clipboard', {
+  configurable: true,
+  value: { writeText: (t) => { copyCalls.push(t); return Promise.resolve(); } },
+});
+
+const copyDoc = '# Copy me\n\n- [ ] with a task\n';
+c = render(copyDoc);
+ok('the copy button is hidden in the rendered view', isHidden(copyBtn));
+
+srcToggle2.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('and appears in source view', !isHidden(copyBtn));
+ok('it lives outside the article, so search never matches it',
+   !window.document.getElementById('content').contains(copyBtn));
+
+copyBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+await new Promise(r => setTimeout(r, 20));
+ok('a click copies the raw text, exactly',
+   copyCalls.length === 1 && copyCalls[0] === copyDoc, JSON.stringify(copyCalls));
+ok('and confirms it', !isHidden(copyDone) &&
+   copyDone.textContent === 'Copied to clipboard');
+
+await new Promise(r => setTimeout(r, 1800));
+ok('the confirmation goes away by itself', isHidden(copyDone));
+
+srcToggle2.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok('leaving source view takes the button with it', isHidden(copyBtn));
+
+console.log('\n== select all takes the document, not the chrome ==');
+// Ctrl+A and the context menu's Select All must never sweep up the toolbar,
+// the theme name, or the tooltip text. Chrome is user-select: none; the
+// search field opts back in so typed queries stay selectable.
+const sel = (el) => window.getComputedStyle(el).userSelect ||
+                    window.getComputedStyle(el).webkitUserSelect;
+ok('the toolbar is unselectable', sel(window.document.getElementById('toolbar')) === 'none',
+   sel(window.document.getElementById('toolbar')));
+ok('the contents rail is unselectable', sel(window.document.getElementById('toc')) === 'none');
+ok('tooltips are unselectable', sel(window.document.getElementById('mdp-tip')) === 'none');
+ok('the trust dialog is unselectable', sel(window.document.getElementById('trust-dialog')) === 'none');
+ok('the copy button is unselectable', sel(copyBtn) === 'none');
+ok('the search field opts back in', sel(findInput) === 'text', sel(findInput));
+
+console.log('\n== a broken parser falls back to the source ==');
+// A missing or corrupt markdown-it must not leave a blank pane: the raw text
+// is always available and always safe, so it is shown, with the error above
+// it saying why. The settings change forces the cached parser to rebuild.
+const realMarkdownit = window.markdownit;
+window.markdownit = undefined;
+c = render('# Broken parser\n\nStill readable.\n', { typographer: true });
+ok('the raw source is shown instead of nothing',
+   c.querySelector('pre.mdp-source')?.textContent.includes('Still readable.'));
+ok('the failure is explained',
+   !window.document.getElementById('notice').hidden &&
+   window.document.getElementById('notice').textContent.includes('showing the raw source'),
+   window.document.getElementById('notice').textContent);
+ok('the copy button is offered for the fallback too', !isHidden(copyBtn));
+ok('the host still hears the failure',
+   posted.some(m => m.kind === 'failed'), JSON.stringify(posted.map(m => m.kind)));
+window.markdownit = realMarkdownit;
+
+c = render('# Recovered\n');
+ok('the next render with a working parser recovers',
+   !!c.querySelector('h1') && isHidden(copyBtn));
+
 console.log('\n== source highlighting: what each part is coloured as ==');
 // highlight.js's markdown grammar answers none of these, which is why the
 // source view tokenises the file itself.
@@ -851,6 +923,19 @@ ok('the body between the delimiters is coloured too',
 ok('escaped-paren inline math is picked up',
    textsOf('.mdp-s-math').some(t => t.includes('a^2')),
    JSON.stringify(textsOf('.mdp-s-math')));
+
+// Money is not mathematics: single-dollar inline math is an opt-in in the
+// renderer, and the source colouring follows the same policy.
+c = render('this costs $5, sometimes $10, plus \\( a^2 \\) inline.\n');
+ok('prices are not coloured as math by default',
+   !textsOf('.mdp-s-math').some(t => t.includes('$5')),
+   JSON.stringify(textsOf('.mdp-s-math')));
+ok('escaped-paren math still is',
+   textsOf('.mdp-s-math').some(t => t.includes('a^2')));
+
+c = render('costs $5 now, and $x + y$ when opted in.\n', { singleDollarMath: true });
+ok('single-dollar spans colour once the setting is on',
+   textsOf('.mdp-s-math').length > 0, JSON.stringify(textsOf('.mdp-s-math')));
 
 // A fence inside the file must not have its contents read as Markdown.
 c = render('```md\n# not a heading\n```\n\n# a real heading\n');

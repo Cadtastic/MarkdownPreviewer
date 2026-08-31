@@ -221,6 +221,20 @@
     </div>
   </div>
 
+  <!-- Source view's copy button. Fixed under the toolbar's right edge so it
+       stays put however far the file is scrolled; hidden whenever the rendered
+       document is showing. Lives outside the article so the in-page search
+       never sees its text. -->
+  <button id="copy-source" class="mdp-copy-source" type="button" hidden
+          data-mdp-tip="Copy source&#10;Copies the file's text to the clipboard.">
+    <svg class="mdp-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 8m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" />
+      <path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2" />
+    </svg>
+    <span class="mdp-sr-only">Copy source to clipboard</span>
+    <span id="copy-source-done" class="mdp-copied" hidden>Copied to clipboard</span>
+  </button>
+
   <!-- One tooltip element, moved and filled from whichever control the pointer
        or keyboard is on. A native `title` cannot be themed, cannot wrap where we
        want it to, and waits on the OS's own delay. -->

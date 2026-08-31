@@ -874,8 +874,67 @@
   var viewSource = {
     toggle: document.getElementById('view-source'),
     highlight: document.getElementById('source-highlight'),
-    highlightLabel: document.getElementById('source-highlight-label')
+    highlightLabel: document.getElementById('source-highlight-label'),
+    copy: document.getElementById('copy-source'),
+    copied: document.getElementById('copy-source-done'),
+    copiedTimer: 0
   };
+
+  /*
+   * The raw text, to the clipboard. The async clipboard API is the right way
+   * on this page (an https origin is a secure context); the selection-based
+   * fallback covers hosts where it is absent or refused. Feedback is a small
+   * "Copied to clipboard" beside the button that holds for a beat and fades -
+   * CSS owns the fade, this only starts and clears it.
+   */
+  function copySourceToClipboard() {
+    var text = state.lastMessage
+      ? String(state.lastMessage.markdown == null ? '' : state.lastMessage.markdown)
+      : '';
+
+    var viaApi = window.navigator && navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function';
+
+    if (viaApi) {
+      navigator.clipboard.writeText(text).then(showCopied, function () {
+        if (copyViaSelection(text)) { showCopied(); }
+      });
+    } else if (copyViaSelection(text)) {
+      showCopied();
+    }
+  }
+
+  function copyViaSelection(text) {
+    var scratch = document.createElement('textarea');
+    scratch.value = text;
+    scratch.setAttribute('readonly', '');
+    scratch.style.position = 'fixed';
+    scratch.style.left = '-9999px';
+    document.body.appendChild(scratch);
+    scratch.select();
+
+    var copied = false;
+    try { copied = document.execCommand('copy'); }
+    catch (_) { copied = false; }
+
+    document.body.removeChild(scratch);
+    return copied;
+  }
+
+  function showCopied() {
+    if (!viewSource.copied) { return; }
+
+    // Restart the animation even when clicked mid-fade: the hidden round trip
+    // resets the CSS animation, and the timer removes it again afterwards.
+    window.clearTimeout(viewSource.copiedTimer);
+    viewSource.copied.hidden = true;
+    void viewSource.copied.offsetWidth;
+    viewSource.copied.hidden = false;
+
+    viewSource.copiedTimer = window.setTimeout(function () {
+      viewSource.copied.hidden = true;
+    }, 1700);
+  }
 
   function readViewSourcePreferences() {
     try {
@@ -901,6 +960,11 @@
 
     if (viewSource.highlight) {
       viewSource.highlight.checked = state.highlightSource;
+    }
+
+    if (viewSource.copy) {
+      viewSource.copy.hidden = !state.viewSource;
+      if (!state.viewSource && viewSource.copied) { viewSource.copied.hidden = true; }
     }
 
     // The option does nothing outside source view, and saying so beats leaving
@@ -953,7 +1017,7 @@
    */
   var SRC_INLINE = [
     ['mdp-s-code', /`[^`\n]+`/],
-    ['mdp-s-math', /\$\$[^\n]+?\$\$|\\\([^\n]*?\\\)|\$[^\s$][^\n$]*?\$/],
+    ['mdp-s-math', /\$\$[^\n]+?\$\$|\\\([^\n]*?\\\)/],
     ['mdp-s-link', /!?\[[^\]\n]*\]\([^)\n]*\)/],
     ['mdp-s-autolink', /<https?:\/\/[^>\s]+>/],
     ['mdp-s-strong', /\*\*[^\n]+?\*\*|__[^\n]+?__/],
@@ -977,12 +1041,13 @@
       var bestText = '';
       var bestClass = '';
 
-      for (var i = 0; i < SRC_INLINE.length; i++) {
-        var found = rest.match(SRC_INLINE[i][1]);
+      var rules = srcInlineRules();
+      for (var i = 0; i < rules.length; i++) {
+        var found = rest.match(rules[i][1]);
         if (found && (bestIndex < 0 || found.index < bestIndex)) {
           bestIndex = found.index;
           bestText = found[0];
-          bestClass = SRC_INLINE[i][0];
+          bestClass = rules[i][0];
         }
       }
 
@@ -1053,6 +1118,19 @@
   function appendTableCell(parent, text, isHeading) {
     if (isHeading) { parent.appendChild(srcSpan('mdp-s-table-head', text)); }
     else { appendSourceInline(parent, text); }
+  }
+
+  /*
+   * Single-dollar inline math is an opt-in in the renderer (prose about money
+   * must not become mathematics), and the source colouring follows the same
+   * policy: the $...$ pattern only participates when the setting is on.
+   */
+  var SRC_SINGLE_DOLLAR = ['mdp-s-math', /\$[^\s$][^\n$]*?\$/];
+
+  function srcInlineRules() {
+    return state.settings.singleDollarMath === true
+      ? SRC_INLINE.concat([SRC_SINGLE_DOLLAR])
+      : SRC_INLINE;
   }
 
   function highlightSourceInto(pre, text) {
@@ -2021,7 +2099,17 @@
       try {
         html = parserFor(state.settings).render(split.body, env);
       } catch (error) {
-        fail(token, 'Markdown parse failed: ' + error.message);
+        // A parser that cannot run - a missing or corrupt markdown-it after a
+        // damaged install - must not leave a blank pane. The raw text is
+        // always available and always safe to show, so show it, with the
+        // error above it saying why the document is not rendered. The host
+        // hears "failed" directly rather than through fail(), which exists to
+        // blank the pane - the one thing this path is here to avoid.
+        paintSource(source);
+        if (viewSource.copy) { viewSource.copy.hidden = false; }
+        showNotice('Markdown parse failed: ' + error.message +
+                   ' \u2014 showing the raw source instead.', 'error');
+        post({ kind: 'failed', token: token, message: 'Markdown parse failed: ' + error.message });
         return;
       }
 
@@ -2405,6 +2493,10 @@
       syncViewSourceControls();
       redrawCurrentDocument();
     });
+  }
+
+  if (viewSource.copy) {
+    viewSource.copy.addEventListener('click', copySourceToClipboard);
   }
 
   if (viewSource.highlight) {
