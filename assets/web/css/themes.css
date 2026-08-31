@@ -282,3 +282,44 @@
 [data-mdp-named] .markdown-body img {
   background-color: transparent;
 }
+
+/* ---- source-view token hues for the light palettes -------------------------- */
+
+/*
+ * The dark palettes colour raw Markdown straight from their chrome tokens,
+ * which already glow against a dark surface. Against the light grounds those
+ * same tokens read but do not pop, so the light palettes get deeper, fully
+ * saturated hues of the same families. Measured against each light theme's
+ * source surface these all clear 4.9:1; most clear 6:1.
+ */
+[data-mdp-theme="github-light"] .markdown-body pre.mdp-source,
+[data-mdp-theme="paper"] .markdown-body pre.mdp-source,
+[data-mdp-theme="arctic"] .markdown-body pre.mdp-source,
+[data-mdp-theme="ledger"] .markdown-body pre.mdp-source {
+  --src-structure: #424a53;
+  --src-heading: #0e4ee8;
+  --src-fence: #0a701d;
+  --src-table: #0e4ee8;
+  --src-math: #a60f7d;
+  --src-code: #bd0e29;
+  --src-link: #6d28d9;
+  --src-list: #b34200;
+}
+
+/* The extra push the light grounds need: inline code and mathematics get the
+   same soft chips the rendered view puts behind inline code, which lifts them
+   off the page without spending any contrast. */
+[data-mdp-theme="github-light"] .markdown-body pre.mdp-source .mdp-s-code,
+[data-mdp-theme="paper"] .markdown-body pre.mdp-source .mdp-s-code,
+[data-mdp-theme="arctic"] .markdown-body pre.mdp-source .mdp-s-code,
+[data-mdp-theme="ledger"] .markdown-body pre.mdp-source .mdp-s-code {
+  background: var(--crit-soft);
+  border-radius: 3px;
+}
+[data-mdp-theme="github-light"] .markdown-body pre.mdp-source .mdp-s-math,
+[data-mdp-theme="paper"] .markdown-body pre.mdp-source .mdp-s-math,
+[data-mdp-theme="arctic"] .markdown-body pre.mdp-source .mdp-s-math,
+[data-mdp-theme="ledger"] .markdown-body pre.mdp-source .mdp-s-math {
+  background: var(--warn-soft);
+  border-radius: 3px;
+}

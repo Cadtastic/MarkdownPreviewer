@@ -159,6 +159,29 @@ mjx-container[jax="SVG"][display="true"] {
   cursor: help;
 }
 
+/* --- selection ------------------------------------------------------------------ */
+
+/*
+ * Select All belongs to the document. Everything that is chrome - the toolbar,
+ * the contents rail, tooltips, dialogs, the copy button - is excluded from
+ * selection, so Ctrl+A or the context menu's Select All takes exactly the
+ * Markdown and none of the buttons, checkbox labels or the theme name. The
+ * search field opts back in: text typed into it must stay selectable.
+ */
+.mdp-toolbar,
+.mdp-toc,
+.mdp-tip,
+.mdp-dialog,
+.mdp-copy-source,
+.notice {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mdp-toolbar input[type="text"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* --- toolbar ---------------------------------------------------------------- */
 
 /*
@@ -493,6 +516,171 @@ body {
  */
 .mdp-linkmode-toggle[aria-pressed="true"] .mdp-lm-locate { display: none; }
 .mdp-linkmode-toggle[aria-pressed="false"] .mdp-lm-app { display: none; }
+
+/* --- copy source ------------------------------------------------------------------ */
+
+.mdp-copy-source {
+  position: fixed;
+  top: calc(var(--mdp-bar-offset, 0px) + 10px);
+  right: 22px;               /* clear of the reserved scrollbar */
+  z-index: 9;                /* under the toolbar and rail, over the document */
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  opacity: 0.75;
+  box-shadow: var(--shadow);
+}
+.mdp-copy-source:hover {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Below the rule above; see the note on .mdp-toolbar[hidden]. */
+.mdp-copy-source[hidden] {
+  display: none;
+}
+
+/* The moment of confirmation: appears beside the button, holds briefly, fades.
+   Removed from layout by script when the animation ends. */
+.mdp-copied {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 11px/1.4 "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  animation: mdp-copied-fade 1.6s ease forwards;
+}
+.mdp-copied[hidden] {
+  display: none;
+  animation: none;
+}
+
+@keyframes mdp-copied-fade {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* --- view source ---------------------------------------------------------------- */
+
+.mdp-source-toggle[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  --mdp-icon-cut: var(--accent-soft);
+}
+
+/*
+ * The file as it is on disk. Wrapped rather than scrolled sideways: a long
+ * line in Markdown is usually prose, and reading it should not mean dragging a
+ * horizontal scrollbar back and forth.
+ */
+.markdown-body pre.mdp-source {
+  margin: 0;
+  color: var(--ink);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.markdown-body pre.mdp-source code {
+  display: block;
+  padding: 0;
+  background: none;
+  font-size: calc(12px * var(--mdp-font-scale));
+  line-height: 1.55;
+}
+
+/*
+ * Source token colours.
+ *
+ * Every one is a palette token the chrome already uses, never a literal. Those
+ * tokens are defined per theme against that theme's own surfaces, so this
+ * colours correctly in all seven — and a theme added later inherits it without
+ * anyone remembering to come back here.
+ *
+ * Weight carries the meaning the brief asked for: keys and table headings are
+ * bold whatever colour they sit in.
+ */
+
+/*
+ * The token hues, as variables: the defaults below suit the dark palettes,
+ * where the theme tokens already glow against the surface, and themes.css
+ * overrides them per light palette with deeper, more saturated hues - washed
+ * against a near-white ground, the chrome tokens read but do not pop.
+ */
+.markdown-body pre.mdp-source {
+  --src-structure: var(--ink-2);   /* front matter, quotes, rules, raw HTML */
+  --src-heading: var(--accent);
+  --src-fence: var(--good);
+  --src-table: var(--accent);
+  --src-math: var(--warn);
+  --src-code: var(--crit);
+  --src-link: var(--accent);
+  --src-list: var(--warn);
+}
+
+/* Front matter is one colour end to end, delimiters included. */
+.markdown-body pre.mdp-source .mdp-s-front { color: var(--src-structure); }
+
+/* ...with keys picked out by weight rather than by a second colour. */
+.markdown-body pre.mdp-source .mdp-s-key { font-weight: 700; }
+
+.markdown-body pre.mdp-source .mdp-s-heading {
+  color: var(--src-heading);
+  font-weight: 700;
+}
+
+/* Opening and closing fences match, language tag included. */
+.markdown-body pre.mdp-source .mdp-s-fence { color: var(--src-fence); }
+
+/* Both kinds of table rule — the pipes and the alignment row — are one colour. */
+.markdown-body pre.mdp-source .mdp-s-table-rule { color: var(--src-table); }
+.markdown-body pre.mdp-source .mdp-s-table-head { font-weight: 700; }
+
+.markdown-body pre.mdp-source .mdp-s-math { color: var(--src-math); }
+.markdown-body pre.mdp-source .mdp-s-code { color: var(--src-code); }
+.markdown-body pre.mdp-source .mdp-s-link,
+.markdown-body pre.mdp-source .mdp-s-autolink { color: var(--src-link); }
+.markdown-body pre.mdp-source .mdp-s-html { color: var(--src-structure); }
+.markdown-body pre.mdp-source .mdp-s-list { color: var(--src-list); font-weight: 700; }
+.markdown-body pre.mdp-source .mdp-s-quote { color: var(--src-structure); }
+.markdown-body pre.mdp-source .mdp-s-rule { color: var(--src-structure); }
+.markdown-body pre.mdp-source .mdp-s-strong { font-weight: 700; }
+.markdown-body pre.mdp-source .mdp-s-em { font-style: italic; }
+
+/* The body of a fenced block is highlight.js's, under the language the fence
+   named, and it brings its own theme — the same one the rendered view uses. */
+.markdown-body pre.mdp-source code.mdp-s-codeblock {
+  display: inline;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* An option that only bites in one mode should look inert in the other. */
+.mdp-toolbar-options label.mdp-option-idle {
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* --- expand toggle -------------------------------------------------------------- */
 

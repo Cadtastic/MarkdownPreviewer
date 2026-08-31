@@ -5,13 +5,63 @@ All notable changes to the Markdown Preview Handler are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] — 2026-08-30
+## [1.4.0] — 2026-08-31
 
-The toolbar is there when you arrive, a document you wrote yourself can be let
-onto the network, and a link to the file next door turns the page instead of
-leaving the pane.
+The toolbar is there when you arrive, the raw file is one click away, a document
+you wrote yourself can be let onto the network, and a link to the file next door
+turns the page instead of leaving the pane.
 
 ### Added
+
+- **View source.** A toggle between the options gear and the expand control
+  swaps the rendered document for the file exactly as it sits on disk — front
+  matter included, nothing tidied — so you can see what a document actually
+  contains rather than what it renders to. A **Syntax highlighting** option in
+  the options row colours the raw Markdown; it is off by default, and reads as
+  inert while the rendered view is showing, since that is the only place it
+  applies.
+
+  The setting is remembered for every document rather than per file: someone
+  checking raw Markdown is usually checking several. Search still works, and
+  finding a link or a heading in the raw file is much of the point. The
+  controls that mean nothing against plain text — contents, checkbox editing,
+  trust — disable themselves and say that source view is the reason, rather
+  than blaming the document.
+
+  The highlighting is the previewer's own, not highlight.js's Markdown
+  grammar, which answered none of the questions a reader of raw Markdown
+  actually has. Front matter is one colour end to end, delimiters included,
+  with its keys picked out by weight rather than a second colour. A fence and
+  its closing partner match, language tag included, and the body between them
+  is handed to highlight.js under the language the fence declares — so a
+  ```csharp block reads as C#, not as Markdown. Table pipes and the alignment
+  row share one colour and the heading row is bold. Mathematics is coloured,
+  display and inline, delimiters and all.
+
+  The dark palettes colour the source straight from the chrome tokens, which
+  already glow against a dark surface; the light palettes get their own
+  deeper, fully saturated hues of the same families, because against a
+  near-white ground the chrome tokens read but do not pop: vivid royal-blue
+  headings and table rules, violet links, saturated green fences, magenta
+  mathematics and crimson inline code — the latter two on the same soft chips
+  the rendered view puts behind inline code. Each hue was chosen as the most
+  saturated candidate that still clears 4.6:1 on every light ground, chips
+  included; the dark palettes stay above 4.6:1 untouched. That measuring
+  caught real faults along the way:
+  the block now sets its own text colour instead of inheriting one this
+  stylesheet does not own (all the weight-only tokens had to stand on), and
+  the structural grey moved off the chrome-label tone that read at 4.1:1 on
+  the lighter palettes.
+
+  A copy button rides with the source view, fixed at the top right under the
+  toolbar, and puts the file's text — not the highlighted markup — on the
+  clipboard, confirming with a "Copied to clipboard" that holds for a beat
+  and fades. It lives outside the document element on purpose, so the in-page
+  search can never match its caption in someone's file.
+
+  And if the Markdown parser itself cannot run — a damaged install, a corrupt
+  asset — the preview now falls back to exactly this source view, with the
+  error explained above it, instead of a blank pane.
 
 - **Expand the preview to the full pane width.** A toggle in the view controls
   gives the document every pixel the pane has: the centred reading measure goes
@@ -46,8 +96,8 @@ leaving the pane.
   Anything unexpected refuses rather than guesses: a file whose bytes would not
   survive the round trip, a line that is not a task, a marker already in the
   requested state (the file changed under the preview), a read-only or vanished
-  file. A refusal re-renders from what is actually on disk, so the checkbox
-  snaps back to the truth instead of showing a change that never landed. The
+  file. A refusal draws the document again from the text the preview last read,
+  so the checkbox snaps back instead of showing a change that never landed. The
   toggle disables itself, and says why, for documents with no file behind them
   and for truncated ones.
 
@@ -112,6 +162,12 @@ leaving the pane.
   a `style` attribute.
 
 ### Changed
+
+- **Select All takes the document, not the chrome.** The toolbar, the contents
+  rail, tooltips, dialogs and the copy button are excluded from text selection,
+  so Ctrl+A or the context menu's Select All yields exactly the Markdown — no
+  button captions, no checkbox labels, no theme name. The search field opts
+  back in, since text typed there must stay selectable.
 
 - **The trust toggle says what it actually grants.** Its tooltips now name
   external *image* links — the only thing trust unlocks — and the toggle

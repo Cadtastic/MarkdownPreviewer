@@ -190,13 +190,102 @@ Set-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer' -Name AllowRawHtml -Value 1 
 
 ## The toolbar, search, or table of contents is missing
 
-`Ctrl+F` opens the toolbar (the right-click menu's *Find…* does too, which is
-the one to try if a host application swallows the keystroke). The contents rail
-is toggled from the toolbar's **Contents** button and is unavailable — button
-disabled — for documents with fewer than two headings; it is also dropped on
-panes narrower than 640 px, where it would cover more than it navigates. The
-toolbar's `×` (or `Esc`) closes everything at once. Open/closed choices for the
-rail and the options row persist across documents.
+The toolbar is visible by default, so a missing one means it was closed for the
+document on screen — `Esc` or the `×` does that. Selecting another file brings
+it back; so do `Ctrl+F` and the right-click menu's *Find…*, which is the one to
+try if a host application swallows the keystroke.
+
+The contents rail is toggled from the toolbar's **Contents** button and is
+unavailable — button disabled — for documents with fewer than two headings; it
+is also dropped on panes narrower than 640 px, where it would cover more than it
+navigates. Open/closed choices for the rail and the options row persist across
+documents.
+
+## A toolbar control is greyed out
+
+Every disabled control says why in its tooltip, and the reason is usually the
+document rather than a fault:
+
+| Control | Disabled when |
+| --- | --- |
+| Contents | Fewer than two headings, or source view is showing |
+| Expand | The pane is narrower than the reading measure, so there is nothing to expand into |
+| Syntax highlighting | The rendered view is showing — it only colours the source |
+| Edit task checkboxes | No task list in the document, no file behind the item, or the document was truncated; also while source view is showing |
+| Trust | No external image links to grant, no file behind the item, or source view is showing |
+
+"No file behind the item" means the document reached the preview as a stream
+rather than a path — inside a `.zip`, from a Search result, as a mail
+attachment. There is no path to record a setting against.
+
+## Clicking a checkbox does nothing, or it snaps back
+
+Checkbox editing is off until you turn it on, per document, from the toolbar's
+options row. With it off the boxes render but do not accept clicks.
+
+With it on, a box that flips and then snaps back means the host **refused** the
+write rather than losing it. The refusal is deliberate and happens whenever the
+file does not match what the page believes: the bytes would not survive a
+decode/re-encode round trip, the named line is not a task marker, the marker is
+already in the state you asked for (the file changed underneath), or the file is
+read-only or gone. After a refusal the document is drawn again from the text the
+preview last read, which is why the box returns to its previous state instead of
+showing a change that never landed.
+
+If the refusal reason was that the **file changed underneath**, that redraw uses
+the older text, so the pane will still be behind — reselect the file to pick up
+what is actually on disk now.
+
+The list of documents with editing turned on is plain registry data:
+
+```powershell
+Get-Item 'HKCU:\SOFTWARE\MarkdownPreviewer\TaskEditDocuments'
+```
+
+## A local link opened the wrong way, or did nothing
+
+The crosshair/arrow switch in the options row decides. **Reveal in Explorer**
+(the default, crosshair) navigates the hosting Explorer tab to the file's folder
+and selects it, making it the new preview. **Open in the default app** (arrow
+leaving a box) is the older behaviour and keeps an allowlist of inert document
+types — a `.bat` next to a README will not launch, by design, whereas revealing
+it is harmless and works for any file.
+
+A link to a file that is not there does nothing at all. When no Explorer tab is
+hosting the preview — the dev harness, Outlook's reading pane, a document inside
+a `.zip` — reveal opens a folder window with the file selected instead of
+navigating in place.
+
+## Remote images still do not load after trusting the document
+
+Trust is recorded per file, by full path. Check the grant actually landed:
+
+```powershell
+Get-ItemProperty 'HKCU:\SOFTWARE\MarkdownPreviewer\TrustedDocuments'
+```
+
+A grant is keyed to the path, so moving or renaming the file drops it. Deleting
+a value revokes one document; deleting the key revokes everything.
+
+Trust lifts exactly one restriction — the host's refusal to serve http(s) image
+requests. Scripts, frames, forms and outbound connections stay blocked by CSP
+for trusted and untrusted documents alike, so a document that is still not
+loading something other than an image is behaving correctly.
+
+## Source view shows no colour
+
+**Syntax highlighting** in the options row is off by default, and it only
+applies to the source view — it reads as inert while the rendered document is
+showing. Files over 300,000 characters are shown as plain text regardless,
+because tokenising them would stall the pane.
+
+If the preview drops into source view **by itself**, with an error above the
+document, the Markdown parser could not run — a damaged install or a corrupt
+asset. Confirm the core bundle is present and reinstall if it is not:
+
+```powershell
+Test-Path "$env:ProgramFiles\MarkdownPreviewer\assets\web\js\markdown-it.min.js"
+```
 
 ## The theme selector did not change anything
 

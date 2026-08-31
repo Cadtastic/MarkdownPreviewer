@@ -29,11 +29,13 @@ does, but integrated where you already are.
 - **Seven themes** — System follows the Windows colour mode; Paper, Arctic and
   Ledger (light) and Harbor, Midnight and Carbon (dark) re-tint the document
   and the chrome together, picked from the toolbar and remembered
-- **One toolbar, there when you arrive** — a top bar holding search, its
-  options row (match case, whole word, regex, the trust toggle and the theme
-  selector), and the contents toggle. The document always starts below it; the
-  × at the far right (or `Esc`) dismisses it for the document on screen, and
-  the next one brings it back
+- **One toolbar, there when you arrive** — a top bar holding search, the
+  contents toggle, and the view controls (options, view source, expand). Its
+  options row carries the search switches (match case, whole word, regex),
+  syntax highlighting for the source view, and the document settings: where
+  local links open, checkbox editing, trust, and the theme selector. The
+  document always starts below it; the × at the far right (or `Esc`) dismisses
+  it for the document on screen, and the next one brings it back
 - **Search sees pictures** — text drawn inside Mermaid diagrams is highlighted
   in place; SVG images get their text extracted by the host and matched; every
   image's alt and title text counts too, with matches boxing the image
@@ -48,6 +50,8 @@ does, but integrated where you already are.
   and saves the change straight to the file, one character at a time
 - **Room to read** — expand the document to the full pane width when a table or
   diagram needs it, and collapse back to the reading measure when it does not
+- **See the source** — swap the rendered document for the raw Markdown, with
+  optional syntax highlighting, without leaving the preview pane
 - **Local links turn the page** — click `docs/architecture.md` in a README and
   Explorer navigates to that file and selects it, so the preview follows the
   link; a toolbar switch opens links in their default app instead
@@ -145,7 +149,7 @@ the behaviour lives:
 ```powershell
 cd tests\web
 npm install
-npm test          # 175 assertions, no browser required
+npm test          # 360 assertions, no browser required
 ```
 
 When you do need to test in Explorer, `scripts\Restart-Explorer.ps1` clears the
@@ -197,10 +201,22 @@ unless noted. Bad values are clamped, never fatal.
 | `MaximumBytes` | 4194304 | Read cap; larger files are truncated with a notice |
 | `LogLevel` | *(absent)* | 0=Debug…3=Error. Absent disables logging entirely |
 
-The toolbar's theme selector (System plus six named palettes) is a per-user
-choice stored in the preview's own browser profile. `FollowSystemTheme` and
-`FixedTheme` decide what **System** means; a named theme carries its own
-lightness and ignores them.
+The registry holds the machine and per-user defaults. The toolbar's own choices
+live elsewhere, in one of two places depending on what they are:
+
+| Choice | Stored | Scope |
+| --- | --- | --- |
+| Theme, search options, source view, syntax highlighting, expanded width, link mode, panel open/closed | The preview's browser profile | Per user, all documents |
+| Checkbox editing | `HKCU\Software\MarkdownPreviewer\TaskEditDocuments` | Per document |
+| Trust for remote images | `HKCU\Software\MarkdownPreviewer\TrustedDocuments` | Per document |
+
+The split is deliberate: a view preference is about how you like to read, and
+carries to the next file, whereas editing and trust are judgements about one
+specific document and must not arm the next one you open. Browser-profile
+choices survive upgrades but not a profile wipe.
+
+`FollowSystemTheme` and `FixedTheme` decide what the **System** theme means; a
+named palette carries its own lightness and ignores them.
 
 ### Defaults that are deliberate decisions
 
@@ -223,6 +239,36 @@ anything reaches the DOM, a sanitiser strips `<script>`, `<iframe>`, `<form>`,
 every `on*` handler, and any `javascript:`/`file:` URL — and CSP forbids inline
 script and network access independently. Set it to 0 for strictly-Markdown
 rendering.
+
+### Reading the source
+
+The toggle between the options gear and the expand control swaps the rendered
+document for the file exactly as it sits on disk — front matter included,
+nothing tidied. **Syntax highlighting** in the options row colours the raw
+Markdown; it is off by default and reads as inert while the rendered view is
+showing, since that is the only place it applies.
+
+Both choices are remembered for every document rather than per file: someone
+checking raw Markdown is usually checking several. Search still works, and
+finding a link or a heading in the raw file is much of the point. The controls
+that mean nothing against plain text — contents, checkbox editing, trust —
+disable themselves and say that source view is the reason.
+
+The highlighting is the previewer's own rather than highlight.js's Markdown
+grammar. Front matter is one colour end to end with its keys picked out by
+weight; a fence and its closing partner match, and the body between them is
+handed to highlight.js under the language the fence declares, so a ` ```csharp `
+block reads as C#. Table pipes and the alignment row share a colour, the heading
+row is bold, and mathematics is coloured in both display and inline form.
+
+A copy button sits at the top right under the toolbar and puts the file's text —
+not the highlighted markup — on the clipboard. It lives outside the document
+element on purpose, so the in-page search can never match its caption in your
+file.
+
+If the Markdown parser itself cannot run — a damaged install, a corrupt asset —
+the preview falls back to this same source view with the error explained above
+it, rather than showing a blank pane.
 
 ### Editing task checkboxes
 
@@ -250,8 +296,12 @@ survive exactly; the file is replaced atomically.
 Anything unexpected is refused rather than guessed at — a file whose bytes would
 not survive the round trip, a line that is not a task, a marker that already
 disagrees with the page (the file changed underneath), a read-only or deleted
-file. After a refusal the document re-renders from disk, so the checkbox snaps
-back rather than showing a change that never happened. The toggle disables
+file. After a refusal the document is drawn again from the text the preview last
+read, so the checkbox snaps back rather than showing a change that never
+happened. (That is the last-read text, not a fresh read: when the refusal reason
+is that the file changed underneath, the pane keeps showing the older document
+until you select the file again. The write itself is still refused.) The toggle
+disables
 itself, and says why, for items with no file behind them and for documents large
 enough to have been truncated.
 

@@ -67,6 +67,9 @@
     hasTasks: false,          // ...and there is at least one checkbox to edit
     remoteImages: 0,          // http(s) images this document refers to, allowed or not
     expanded: false,          // document fills the pane instead of its reading measure
+    viewSource: false,        // showing the file's own text instead of the rendered document
+    highlightSource: false,   // ...and colouring it
+    lastMessage: null,        // the render that produced what is on screen
     bodyLine: 0,              // source line the rendered body starts on (after front matter)
     trusted: false,           // this document may load resources from the internet
     trustable: false          // ...and it has a path to record that grant against
@@ -587,9 +590,11 @@
 
     if (toggle) {
       toggle.disabled = !eligible;
-      setTip(toggle, eligible
-        ? 'Contents\nJump to a heading.'
-        : 'Contents\nThis document has fewer than two headings.');
+      setTip(toggle, state.viewSource
+        ? 'Contents\nNot available while viewing source.'
+        : eligible
+          ? 'Contents\nJump to a heading.'
+          : 'Contents\nThis document has fewer than two headings.');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.classList.toggle('mdp-active', open);
     }
@@ -625,9 +630,11 @@
     // Nothing to grant is its own reason, and a different one to say: a
     // document with no remote images gains nothing from being trusted.
     var nothingToTrust = state.remoteImages === 0;
-    trust.toggle.disabled = !state.trustable || nothingToTrust;
+    trust.toggle.disabled = !state.trustable || nothingToTrust || state.viewSource;
 
-    setTip(trust.toggle, !state.trustable
+    setTip(trust.toggle, state.viewSource
+      ? 'Trust external image links\nNot available while viewing source.'
+      : !state.trustable
       ? 'Trust external image links\nThis item has no file on disk to trust.'
       : nothingToTrust
         ? 'Trust external image links\nThis document has no external image links.'
@@ -825,15 +832,16 @@
     if (taskEdit.toggle) {
       // Three different reasons the control can be unavailable, and the
       // tooltip says which one applies rather than leaving a dead button.
-      var usable = state.taskEditable && state.hasTasks;
+      var usable = state.taskEditable && state.hasTasks && !state.viewSource;
 
       taskEdit.toggle.setAttribute('aria-pressed', taskEditingActive() ? 'true' : 'false');
       taskEdit.toggle.disabled = !usable;
       setTip(taskEdit.toggle,
-        !state.hasTasks ? 'Edit checkboxes\nThis document has no task list.'
-          : !state.taskEditable ? 'Edit checkboxes\nThis document has no file to save to.'
-            : state.editTasks ? 'Checkboxes are editable\nChanges save to the file straight away.'
-              : 'Edit checkboxes\nChanges save to the file straight away.');
+        state.viewSource ? 'Edit checkboxes\nNot available while viewing source.'
+          : !state.hasTasks ? 'Edit checkboxes\nThis document has no task list.'
+            : !state.taskEditable ? 'Edit checkboxes\nThis document has no file to save to.'
+              : state.editTasks ? 'Checkboxes are editable\nChanges save to the file straight away.'
+                : 'Edit checkboxes\nChanges save to the file straight away.');
     }
 
     syncTaskBoxes();
@@ -846,6 +854,456 @@
     for (var i = 0; i < boxes.length; i++) {
       boxes[i].disabled = !active;
     }
+  }
+
+  // ------------------------------------------------------------- view source ---
+
+  /*
+   * Shows the file as it is on disk instead of the document it renders to.
+   *
+   * A view preference rather than a document one - someone checking raw
+   * Markdown is usually checking several files - so it lives in local storage
+   * beside the other view choices rather than in the host's per-document
+   * stores.
+   *
+   * Redrawing is a re-render of the message already in hand: nothing about the
+   * document has changed, only how it is being shown, so there is no reason to
+   * ask the host for it again. Going back to the rendered view has to take the
+   * same path anyway, because diagrams and mathematics need re-running.
+   */
+  var viewSource = {
+    toggle: document.getElementById('view-source'),
+    highlight: document.getElementById('source-highlight'),
+    highlightLabel: document.getElementById('source-highlight-label'),
+    copy: document.getElementById('copy-source'),
+    copied: document.getElementById('copy-source-done'),
+    copiedTimer: 0
+  };
+
+  /*
+   * The raw text, to the clipboard. The async clipboard API is the right way
+   * on this page (an https origin is a secure context); the selection-based
+   * fallback covers hosts where it is absent or refused. Feedback is a small
+   * "Copied to clipboard" beside the button that holds for a beat and fades -
+   * CSS owns the fade, this only starts and clears it.
+   */
+  function copySourceToClipboard() {
+    var text = state.lastMessage
+      ? String(state.lastMessage.markdown == null ? '' : state.lastMessage.markdown)
+      : '';
+
+    var viaApi = window.navigator && navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function';
+
+    if (viaApi) {
+      navigator.clipboard.writeText(text).then(showCopied, function () {
+        if (copyViaSelection(text)) { showCopied(); }
+      });
+    } else if (copyViaSelection(text)) {
+      showCopied();
+    }
+  }
+
+  function copyViaSelection(text) {
+    var scratch = document.createElement('textarea');
+    scratch.value = text;
+    scratch.setAttribute('readonly', '');
+    scratch.style.position = 'fixed';
+    scratch.style.left = '-9999px';
+    document.body.appendChild(scratch);
+    scratch.select();
+
+    var copied = false;
+    try { copied = document.execCommand('copy'); }
+    catch (_) { copied = false; }
+
+    document.body.removeChild(scratch);
+    return copied;
+  }
+
+  function showCopied() {
+    if (!viewSource.copied) { return; }
+
+    // Restart the animation even when clicked mid-fade: the hidden round trip
+    // resets the CSS animation, and the timer removes it again afterwards.
+    window.clearTimeout(viewSource.copiedTimer);
+    viewSource.copied.hidden = true;
+    void viewSource.copied.offsetWidth;
+    viewSource.copied.hidden = false;
+
+    viewSource.copiedTimer = window.setTimeout(function () {
+      viewSource.copied.hidden = true;
+    }, 1700);
+  }
+
+  function readViewSourcePreferences() {
+    try {
+      state.viewSource = window.localStorage.getItem('mdp.viewSource') === '1';
+      state.highlightSource = window.localStorage.getItem('mdp.highlightSource') === '1';
+    } catch (_) { /* defaults stand */ }
+  }
+
+  function storeViewSourcePreferences() {
+    try {
+      window.localStorage.setItem('mdp.viewSource', state.viewSource ? '1' : '0');
+      window.localStorage.setItem('mdp.highlightSource', state.highlightSource ? '1' : '0');
+    } catch (_) { /* storage unavailable; the choice just will not persist */ }
+  }
+
+  function syncViewSourceControls() {
+    if (viewSource.toggle) {
+      viewSource.toggle.setAttribute('aria-pressed', state.viewSource ? 'true' : 'false');
+      setTip(viewSource.toggle, state.viewSource
+        ? 'Viewing source\nShowing the file as it is on disk.'
+        : 'View source\nShow the file as it is on disk.');
+    }
+
+    if (viewSource.highlight) {
+      viewSource.highlight.checked = state.highlightSource;
+    }
+
+    if (viewSource.copy) {
+      viewSource.copy.hidden = !state.viewSource;
+      if (!state.viewSource && viewSource.copied) { viewSource.copied.hidden = true; }
+    }
+
+    // The option does nothing outside source view, and saying so beats leaving
+    // a live-looking checkbox that changes nothing.
+    if (viewSource.highlightLabel) {
+      viewSource.highlightLabel.classList.toggle('mdp-option-idle', !state.viewSource);
+      setTip(viewSource.highlightLabel, state.viewSource
+        ? 'Syntax highlighting\nColours the raw Markdown.'
+        : 'Syntax highlighting\nApplies while viewing source.');
+    }
+  }
+
+  /*
+   * Markdown source highlighting.
+   *
+   * highlight.js has a markdown grammar, but not one that answers the
+   * questions a reader of raw Markdown actually has: it paints front matter as
+   * several unrelated things, cannot bold a key or a table heading, separates
+   * a fence from the language it names, leaves mathematics as prose, and shows
+   * the inside of a ```csharp block as Markdown rather than as C#. So the
+   * source view tokenises the file itself, line by line, and hands the body of
+   * each fenced block to highlight.js under the language the fence declares.
+   *
+   * Colours come from the chrome's own palette tokens, which are defined per
+   * theme against that theme's surfaces — so the dark palettes need nothing of
+   * their own and a dark theme added later inherits the whole scheme. The
+   * light palettes are the exception: against a near-white ground the chrome
+   * tokens read but do not pop, so themes.css gives them deeper, fully
+   * saturated hues of the same families in --src-*. Every hue there was picked
+   * as the most saturated candidate still clearing 4.6:1 on every light
+   * ground, inline-code and maths chips included.
+   */
+
+  /* Beyond this, tokenising costs more than the colour is worth. */
+  var MAX_HIGHLIGHTED_SOURCE = 300000;
+
+  var SRC = {
+    frontFence: /^(---|\+\+\+)[ \t]*$/,
+    frontPair: /^([ \t]*)([A-Za-z0-9_.$-][A-Za-z0-9_.\[\]$ -]*?)([ \t]*:)(.*)$/,
+    fence: /^([ \t]*)(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+#.-]*)[ \t]*(.*)$/,
+    mathFence: /^[ \t]*(\$\$|\\\[|\\\])[ \t]*$/,
+    tableRow: /^[ \t]*\|/,
+    tableRule: /^[ \t]*\|[\s:|-]*\|[ \t]*$/,
+    heading: /^[ \t]{0,3}#{1,6}([ \t]|$)/,
+    rule: /^[ \t]{0,3}((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$/,
+    quote: /^([ \t]*>+[ \t]?)(.*)$/,
+    list: /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)/
+  };
+
+  /*
+   * Inline spans, tried at every position with the earliest match winning.
+   * Order settles ties: code first, because a backtick span may legitimately
+   * contain asterisks and underscores that are not emphasis.
+   */
+  var SRC_INLINE = [
+    ['mdp-s-code', /`[^`\n]+`/],
+    ['mdp-s-math', /\$\$[^\n]+?\$\$|\\\([^\n]*?\\\)/],
+    ['mdp-s-link', /!?\[[^\]\n]*\]\([^)\n]*\)/],
+    ['mdp-s-autolink', /<https?:\/\/[^>\s]+>/],
+    ['mdp-s-strong', /\*\*[^\n]+?\*\*|__[^\n]+?__/],
+    ['mdp-s-em', /\*[^\s*][^\n*]*?\*|_[^\s_][^\n_]*?_/],
+    ['mdp-s-html', /<\/?[A-Za-z][^>\n]*>/]
+  ];
+
+  function srcSpan(className, text) {
+    var el = document.createElement('span');
+    el.className = className;
+    el.textContent = text;
+    return el;
+  }
+
+  function appendSourceInline(parent, text) {
+    var pos = 0;
+
+    while (pos < text.length) {
+      var rest = text.slice(pos);
+      var bestIndex = -1;
+      var bestText = '';
+      var bestClass = '';
+
+      var rules = srcInlineRules();
+      for (var i = 0; i < rules.length; i++) {
+        var found = rest.match(rules[i][1]);
+        if (found && (bestIndex < 0 || found.index < bestIndex)) {
+          bestIndex = found.index;
+          bestText = found[0];
+          bestClass = rules[i][0];
+        }
+      }
+
+      if (bestIndex < 0) { break; }
+
+      if (bestIndex > 0) {
+        parent.appendChild(document.createTextNode(rest.slice(0, bestIndex)));
+      }
+
+      parent.appendChild(srcSpan(bestClass, bestText));
+      pos += bestIndex + bestText.length;
+    }
+
+    if (pos < text.length) {
+      parent.appendChild(document.createTextNode(text.slice(pos)));
+    }
+  }
+
+  /*
+   * The body of a fenced block, coloured as whatever the fence named. An
+   * unknown or absent language leaves plain text rather than guessing: an
+   * auto-detected wrong language is more confusing than none at all.
+   */
+  function appendFencedCode(parent, text, language) {
+    var el = document.createElement('code');
+    el.className = 'mdp-s-codeblock';
+    el.textContent = text;
+
+    if (language && typeof window.hljs !== 'undefined' &&
+        window.hljs.getLanguage(language)) {
+      el.className += ' language-' + language;
+      try { window.hljs.highlightElement(el); }
+      catch (_) { /* the plain text is already in place */ }
+    }
+
+    parent.appendChild(el);
+  }
+
+  /* One colour for the whole block; only the keys are picked out, in bold. */
+  function appendFrontMatterLine(parent, raw) {
+    var pair = raw.match(SRC.frontPair);
+    if (!pair) {
+      parent.appendChild(srcSpan('mdp-s-front', raw));
+      return;
+    }
+
+    if (pair[1]) { parent.appendChild(srcSpan('mdp-s-front', pair[1])); }
+    parent.appendChild(srcSpan('mdp-s-front mdp-s-key', pair[2] + pair[3]));
+    if (pair[4]) { parent.appendChild(srcSpan('mdp-s-front', pair[4])); }
+  }
+
+  /* Pipes and the alignment row are one colour; the heading row is bold. */
+  function appendTableRow(parent, raw, isHeading) {
+    var pos = 0;
+
+    for (;;) {
+      var pipe = raw.indexOf('|', pos);
+      if (pipe < 0) { break; }
+
+      if (pipe > pos) { appendTableCell(parent, raw.slice(pos, pipe), isHeading); }
+      parent.appendChild(srcSpan('mdp-s-table-rule', '|'));
+      pos = pipe + 1;
+    }
+
+    if (pos < raw.length) { appendTableCell(parent, raw.slice(pos), isHeading); }
+  }
+
+  function appendTableCell(parent, text, isHeading) {
+    if (isHeading) { parent.appendChild(srcSpan('mdp-s-table-head', text)); }
+    else { appendSourceInline(parent, text); }
+  }
+
+  /*
+   * Single-dollar inline math is an opt-in in the renderer (prose about money
+   * must not become mathematics), and the source colouring follows the same
+   * policy: the $...$ pattern only participates when the setting is on.
+   */
+  var SRC_SINGLE_DOLLAR = ['mdp-s-math', /\$[^\s$][^\n$]*?\$/];
+
+  function srcInlineRules() {
+    return state.settings.singleDollarMath === true
+      ? SRC_INLINE.concat([SRC_SINGLE_DOLLAR])
+      : SRC_INLINE;
+  }
+
+  function highlightSourceInto(pre, text) {
+    var lines = text.split('\n');
+    var index = 0;
+    var atStart = true;
+
+    function newline() {
+      if (!atStart) { pre.appendChild(document.createTextNode('\n')); }
+      atStart = false;
+    }
+
+    // Front matter, if the file opens with it: delimiters and body alike.
+    if (lines.length > 0 && SRC.frontFence.test(lines[0])) {
+      var closer = lines[0].trim();
+      var end = 1;
+      while (end < lines.length && lines[end].trim() !== closer) { end++; }
+
+      var last = Math.min(end, lines.length - 1);
+      for (; index <= last; index++) {
+        newline();
+        appendFrontMatterLine(pre, lines[index]);
+      }
+    }
+
+    while (index < lines.length) {
+      var raw = lines[index];
+
+      var fence = raw.match(SRC.fence);
+      if (fence) {
+        newline();
+        pre.appendChild(srcSpan('mdp-s-fence', raw));   // marker and language as one
+        index++;
+
+        var body = [];
+        var closing = fence[2].charAt(0) === '`'
+          ? /^[ \t]*`{3,}[ \t]*$/
+          : /^[ \t]*~{3,}[ \t]*$/;
+
+        while (index < lines.length && !closing.test(lines[index])) {
+          body.push(lines[index]);
+          index++;
+        }
+
+        if (body.length > 0) {
+          newline();
+          appendFencedCode(pre, body.join('\n'), fence[3]);
+        }
+
+        if (index < lines.length) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-fence', lines[index]));
+          index++;
+        }
+
+        continue;
+      }
+
+      // Display mathematics: the delimiters and everything between them.
+      if (SRC.mathFence.test(raw)) {
+        newline();
+        pre.appendChild(srcSpan('mdp-s-math', raw));
+        index++;
+
+        while (index < lines.length && !SRC.mathFence.test(lines[index])) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-math', lines[index]));
+          index++;
+        }
+
+        if (index < lines.length) {
+          newline();
+          pre.appendChild(srcSpan('mdp-s-math', lines[index]));
+          index++;
+        }
+
+        continue;
+      }
+
+      // A table is a run of pipe rows. Which row is the heading is only
+      // knowable from the alignment row underneath it, so the whole run is
+      // measured before any of it is drawn.
+      if (SRC.tableRow.test(raw)) {
+        var start = index;
+        var stop = index;
+        while (stop < lines.length && SRC.tableRow.test(lines[stop])) { stop++; }
+
+        var ruleAt = -1;
+        for (var scan = start; scan < stop; scan++) {
+          if (SRC.tableRule.test(lines[scan])) { ruleAt = scan; break; }
+        }
+
+        for (var row = start; row < stop; row++) {
+          newline();
+          if (row === ruleAt) {
+            pre.appendChild(srcSpan('mdp-s-table-rule', lines[row]));
+          } else {
+            appendTableRow(pre, lines[row], ruleAt > start && row === ruleAt - 1);
+          }
+        }
+
+        index = stop;
+        continue;
+      }
+
+      newline();
+
+      if (SRC.heading.test(raw)) {
+        pre.appendChild(srcSpan('mdp-s-heading', raw));
+        index++;
+        continue;
+      }
+
+      if (SRC.rule.test(raw)) {
+        pre.appendChild(srcSpan('mdp-s-rule', raw));
+        index++;
+        continue;
+      }
+
+      var quote = raw.match(SRC.quote);
+      if (quote) {
+        pre.appendChild(srcSpan('mdp-s-quote', quote[1]));
+        appendSourceInline(pre, quote[2]);
+        index++;
+        continue;
+      }
+
+      var list = raw.match(SRC.list);
+      if (list) {
+        if (list[1]) { pre.appendChild(document.createTextNode(list[1])); }
+        pre.appendChild(srcSpan('mdp-s-list', list[2]));
+        pre.appendChild(document.createTextNode(list[3]));
+        appendSourceInline(pre, raw.slice(list[0].length));
+        index++;
+        continue;
+      }
+
+      appendSourceInline(pre, raw);
+      index++;
+    }
+  }
+
+  /*
+   * Paints the raw text. Text always goes in through textContent, so a file's
+   * own angle brackets are never parsed as markup on the way in; highlighting
+   * is layered on afterwards and is a nicety, never a failure.
+   */
+  function paintSource(source) {
+    var pre = document.createElement('pre');
+    pre.className = 'mdp-source';
+
+    var highlight = state.highlightSource && source.length <= MAX_HIGHLIGHTED_SOURCE;
+
+    if (highlight) {
+      try { highlightSourceInto(pre, source); }
+      catch (_) {
+        pre.textContent = source;   // a tokeniser bug must not blank the view
+      }
+    } else {
+      pre.textContent = source;
+    }
+
+    content.textContent = '';
+    content.appendChild(pre);
+  }
+
+  /* Re-shows the document already on screen under the current view settings. */
+  function redrawCurrentDocument() {
+    if (state.lastMessage) { render(state.lastMessage); }
   }
 
   // ------------------------------------------------------------ expanded view ---
@@ -1563,6 +2021,10 @@
   // ------------------------------------------------------------------ render ---
 
   function render(message) {
+    // Kept so the view toggles can redraw the same document without asking the
+    // host for it again.
+    state.lastMessage = message;
+
     // Adopt the host's token rather than minting our own — see isCurrent().
     var token = typeof message.token === 'number' ? message.token : (state.token + 1);
     state.token = token;
@@ -1633,30 +2095,49 @@
     var env = {};
     var html = '';
 
-    try {
-      html = parserFor(state.settings).render(split.body, env);
-    } catch (error) {
-      fail(token, 'Markdown parse failed: ' + error.message);
-      return;
+    if (state.viewSource) {
+      // The whole file, front matter included: the point is to show what is
+      // actually on disk, not a tidied version of it.
+      paintSource(source);
+    } else {
+      try {
+        html = parserFor(state.settings).render(split.body, env);
+      } catch (error) {
+        // A parser that cannot run - a missing or corrupt markdown-it after a
+        // damaged install - must not leave a blank pane. The raw text is
+        // always available and always safe to show, so show it, with the
+        // error above it saying why the document is not rendered. The host
+        // hears "failed" directly rather than through fail(), which exists to
+        // blank the pane - the one thing this path is here to avoid.
+        paintSource(source);
+        if (viewSource.copy) { viewSource.copy.hidden = false; }
+        showNotice('Markdown parse failed: ' + error.message +
+                   ' \u2014 showing the raw source instead.', 'error');
+        post({ kind: 'failed', token: token, message: 'Markdown parse failed: ' + error.message });
+        return;
+      }
+
+      if (!isCurrent(token)) { return; }
+
+      if (split.frontMatter !== null && state.settings.showFrontMatter) {
+        html = frontMatterHtml(split.frontMatter) + html;
+      }
+
+      content.innerHTML = html;
+
+      if (state.settings.allowRawHtml) {
+        try { sanitiseRawHtml(content); }
+        catch (error) { warnings.push('Sanitiser: ' + error.message); }
+      }
+
+      if (state.settings.taskLists) {
+        try { applyTaskLists(content); }
+        catch (error) { warnings.push('Task lists: ' + error.message); }
+      }
     }
 
     if (!isCurrent(token)) { return; }
-
-    if (split.frontMatter !== null && state.settings.showFrontMatter) {
-      html = frontMatterHtml(split.frontMatter) + html;
-    }
-
-    content.innerHTML = html;
-
-    if (state.settings.allowRawHtml) {
-      try { sanitiseRawHtml(content); }
-      catch (error) { warnings.push('Sanitiser: ' + error.message); }
-    }
-
-    if (state.settings.taskLists) {
-      try { applyTaskLists(content); }
-      catch (error) { warnings.push('Task lists: ' + error.message); }
-    }
+    syncViewSourceControls();
 
     // Only knowable once the body is on screen: whether there are checkboxes
     // to edit, how many remote images there are to trust, and whether the
@@ -1691,11 +2172,11 @@
     // document opens scrolled to wherever the previous one was.
     window.scrollTo(0, 0);
 
-    var mermaidStep = state.settings.mermaid && env.usedMermaid
+    var mermaidStep = !state.viewSource && state.settings.mermaid && env.usedMermaid
       ? renderMermaid(content, token, warnings)
       : Promise.resolve(false);
 
-    var mathStep = state.settings.math && documentHasMath(split.body)
+    var mathStep = !state.viewSource && state.settings.math && documentHasMath(split.body)
       ? renderMath(content, token, warnings)
       : Promise.resolve(false);
 
@@ -2001,6 +2482,33 @@
       syncTaskEditToggle();
       // The host owns the answer per document; it comes back on the next render.
       post({ kind: 'setTaskEdit', enabled: state.editTasks });
+    });
+  }
+
+  // --- view source --------------------------------------------------------------
+
+  readViewSourcePreferences();
+  syncViewSourceControls();
+
+  if (viewSource.toggle) {
+    viewSource.toggle.addEventListener('click', function () {
+      state.viewSource = !state.viewSource;
+      storeViewSourcePreferences();
+      syncViewSourceControls();
+      redrawCurrentDocument();
+    });
+  }
+
+  if (viewSource.copy) {
+    viewSource.copy.addEventListener('click', copySourceToClipboard);
+  }
+
+  if (viewSource.highlight) {
+    viewSource.highlight.addEventListener('change', function () {
+      state.highlightSource = viewSource.highlight.checked;
+      storeViewSourcePreferences();
+      syncViewSourceControls();
+      if (state.viewSource) { redrawCurrentDocument(); }
     });
   }
 
